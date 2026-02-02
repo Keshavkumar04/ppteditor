@@ -1,0 +1,6 @@
+export * from './utils'
+export * from './textParser'
+export * from './shapeParser'
+export * from './imageParser'
+export * from './themeParser'
+export * from './slideParser'
