@@ -156,6 +156,7 @@ export function TableCellComponent({
   // Get border styles
   const getBorderStyle = (border?: { color: string; width: number; style: string }) => {
     if (!border) return '1px solid #d1d5db'
+    if (border.style === 'none' || border.width === 0 || border.color === 'transparent') return 'none'
     return `${border.width}px ${border.style} ${border.color}`
   }
 

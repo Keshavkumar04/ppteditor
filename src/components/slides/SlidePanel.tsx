@@ -12,11 +12,11 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { Plus } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Button } from '@/components/ui/button'
 import { SlideThumbnail } from './SlideThumbnail'
+import { SlideLayoutPicker } from './SlideLayoutPicker'
 import { usePresentation, useEditor, useSelection } from '@/context'
+import { SlideElement } from '@/types'
 
 export function SlidePanel() {
   const {
@@ -61,8 +61,8 @@ export function SlidePanel() {
     deselectAll()
   }
 
-  const handleAddSlide = () => {
-    const newSlide = addSlide(editorState.currentSlideId || undefined)
+  const handleAddSlide = (layoutElements?: SlideElement[]) => {
+    const newSlide = addSlide(editorState.currentSlideId || undefined, layoutElements)
     setCurrentSlide(newSlide.id)
   }
 
@@ -95,21 +95,14 @@ export function SlidePanel() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 border-b">
-        <span className="text-sm font-medium">Slides</span>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={handleAddSlide}
-          title="Add Slide"
-        >
-          <Plus className="h-4 w-4" />
-        </Button>
+      <div className="flex items-center justify-between px-2 py-1.5 border-b">
+        <span className="text-xs font-medium">Slides</span>
+        <SlideLayoutPicker onSelectLayout={(elements) => handleAddSlide(elements)} />
       </div>
 
       {/* Slide List */}
       <ScrollArea className="flex-1">
-        <div className="p-4 pl-8">
+        <div className="p-2 pl-6">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -119,7 +112,7 @@ export function SlidePanel() {
               items={presentation.slides.map(s => s.id)}
               strategy={verticalListSortingStrategy}
             >
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {presentation.slides.map((slide, index) => (
                   <SlideThumbnail
                     key={slide.id}

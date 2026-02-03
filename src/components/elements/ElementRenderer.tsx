@@ -67,10 +67,26 @@ export const ElementRenderer = memo(function ElementRenderer({ element, slideId,
 
 // Simple image renderer - memoized
 const ImageElementRenderer = memo(function ImageElementRenderer({ element }: { element: ImageElement }) {
-  const { size, src, stroke } = element
+  const { size, src, stroke, clipShape } = element
+  const isEllipse = clipShape === 'ellipse'
+  const clipId = isEllipse ? `clip-ellipse-${element.id}` : undefined
 
   return (
     <>
+      {/* Clip path for ellipse shape */}
+      {isEllipse && (
+        <defs>
+          <clipPath id={clipId}>
+            <ellipse
+              cx={size.width / 2}
+              cy={size.height / 2}
+              rx={size.width / 2}
+              ry={size.height / 2}
+            />
+          </clipPath>
+        </defs>
+      )}
+
       {/* Image */}
       <image
         href={src}
@@ -79,19 +95,32 @@ const ImageElementRenderer = memo(function ImageElementRenderer({ element }: { e
         width={size.width}
         height={size.height}
         preserveAspectRatio="xMidYMid slice"
+        clipPath={clipId ? `url(#${clipId})` : undefined}
       />
 
       {/* Border */}
       {stroke?.style !== 'none' && (
-        <rect
-          x={0}
-          y={0}
-          width={size.width}
-          height={size.height}
-          fill="none"
-          stroke={stroke?.color || 'transparent'}
-          strokeWidth={stroke?.width || 0}
-        />
+        isEllipse ? (
+          <ellipse
+            cx={size.width / 2}
+            cy={size.height / 2}
+            rx={size.width / 2}
+            ry={size.height / 2}
+            fill="none"
+            stroke={stroke?.color || 'transparent'}
+            strokeWidth={stroke?.width || 0}
+          />
+        ) : (
+          <rect
+            x={0}
+            y={0}
+            width={size.width}
+            height={size.height}
+            fill="none"
+            stroke={stroke?.color || 'transparent'}
+            strokeWidth={stroke?.width || 0}
+          />
+        )
       )}
     </>
   )

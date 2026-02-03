@@ -35,7 +35,7 @@ export function PresentationEditor(props: PresentationEditorProps) {
   } : undefined
 
   return (
-    <div className={cn('ppt-editor-root', className)} style={style}>
+    <div className={cn('ppt-editor-root h-full', className)} style={style}>
       <TooltipProvider>
         <ThemeProvider customThemes={customThemes} onThemeChange={onThemeChange}>
           <HistoryProvider maxStackSize={maxHistorySize}>

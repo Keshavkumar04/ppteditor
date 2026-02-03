@@ -1,4 +1,4 @@
-import { useRef, useCallback, useEffect } from 'react'
+import { useRef, useCallback, useEffect, useState } from 'react'
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '@/types'
 import { usePresentation, useEditor, useSelection } from '@/context'
 import { ElementRenderer } from '@/components/elements/ElementRenderer'
@@ -7,7 +7,8 @@ export function SlideCanvas() {
   const { presentation } = usePresentation()
   const { editorState, setCurrentSlide } = useEditor()
   const { deselectAll, selection } = useSelection()
-  const containerRef = useRef<HTMLDivElement>(null)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ w: 800, h: 450 })
 
   // Get current slide
   const currentSlide = presentation?.slides.find(
@@ -21,10 +22,29 @@ export function SlideCanvas() {
     }
   }, [presentation, editorState.currentSlideId, setCurrentSlide])
 
+  // Measure the wrapper (which has fixed size from flex layout)
+  useEffect(() => {
+    const el = wrapperRef.current
+    if (!el) return
+
+    const update = () => {
+      const { offsetWidth: w, offsetHeight: h } = el
+      setSize(prev => (prev.w !== w || prev.h !== h) ? { w, h } : prev)
+    }
+
+    update()
+
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    window.addEventListener('resize', update)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', update)
+    }
+  }, [])
 
   // Handle canvas click (deselect)
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
-    // Only deselect if clicking directly on the canvas background
     if (e.target === e.currentTarget) {
       deselectAll()
     }
@@ -32,28 +52,29 @@ export function SlideCanvas() {
 
   if (!currentSlide) {
     return (
-      <div className="h-full flex items-center justify-center text-muted-foreground">
+      <div ref={wrapperRef} className="h-full w-full flex items-center justify-center text-muted-foreground">
         No slide selected
       </div>
     )
   }
 
-  // Calculate zoom and positioning
-  const zoom = editorState.zoom
-  const scaledWidth = SLIDE_WIDTH * zoom
-  const scaledHeight = SLIDE_HEIGHT * zoom
+  // Fit slide to container at zoom=1.0
+  const pad = 40
+  const fitScale = Math.min(
+    (size.w - pad) / SLIDE_WIDTH,
+    (size.h - pad) / SLIDE_HEIGHT
+  )
+  const scale = Math.max(0.1, fitScale * editorState.zoom)
+  const sw = Math.round(SLIDE_WIDTH * scale)
+  const sh = Math.round(SLIDE_HEIGHT * scale)
 
-  // Get background style
+  // Get background fill
   const getBackgroundFill = (): string => {
     const bg = currentSlide.background
-    if (bg.type === 'solid') {
-      return bg.color || '#FFFFFF'
-    }
-    // For gradient, we'll use a gradient def
+    if (bg.type === 'solid') return bg.color || '#FFFFFF'
     return '#FFFFFF'
   }
 
-  // Generate gradient def if needed
   const renderGradientDef = () => {
     const bg = currentSlide.background
     if (bg.type !== 'gradient' || !bg.gradient) return null
@@ -95,72 +116,77 @@ export function SlideCanvas() {
     return getBackgroundFill()
   }
 
+  // Position slide centered in the wrapper
+  const left = Math.max(0, Math.round((size.w - sw) / 2))
+  const top = Math.max(0, Math.round((size.h - sh) / 2))
+
   return (
     <div
-      ref={containerRef}
-      className="h-full w-full overflow-auto flex items-center justify-center p-8"
-      onClick={handleCanvasClick}
+      ref={wrapperRef}
+      className="h-full w-full overflow-hidden relative bg-neutral-200"
+      style={{ minHeight: 0 }}
     >
+      {/* Scrollable area only when zoomed in past container */}
       <div
-        className="relative"
-        style={{
-          width: scaledWidth,
-          height: scaledHeight,
-          minWidth: scaledWidth,
-          minHeight: scaledHeight,
-        }}
+        className="absolute inset-0 overflow-auto"
+        onClick={handleCanvasClick}
       >
-        {/* SVG Canvas */}
-        <svg
-          width={scaledWidth}
-          height={scaledHeight}
-          viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
-          className="slide-canvas bg-white"
+        <div
           style={{
-            boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+            position: 'absolute',
+            left,
+            top,
+            width: sw,
+            height: sh,
           }}
         >
-          {/* Gradient definitions */}
-          <defs>
-            {renderGradientDef()}
-          </defs>
+          <svg
+            width={sw}
+            height={sh}
+            viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
+            className="slide-canvas bg-white"
+            style={{
+              boxShadow: '0 4px 20px rgba(0, 0, 0, 0.15)',
+              display: 'block',
+            }}
+          >
+            <defs>
+              {renderGradientDef()}
+            </defs>
 
-          {/* Background */}
-          <rect
-            x="0"
-            y="0"
-            width={SLIDE_WIDTH}
-            height={SLIDE_HEIGHT}
-            fill={getBackgroundFillUrl()}
-          />
-
-          {/* Background image if applicable */}
-          {currentSlide.background.type === 'image' && currentSlide.background.imageUrl && (
-            <image
-              href={currentSlide.background.imageUrl}
+            <rect
               x="0"
               y="0"
               width={SLIDE_WIDTH}
               height={SLIDE_HEIGHT}
-              preserveAspectRatio="xMidYMid slice"
+              fill={getBackgroundFillUrl()}
             />
-          )}
 
-          {/* Grid overlay (optional) */}
-          {editorState.gridEnabled && <GridOverlay />}
-
-          {/* Elements sorted by zIndex */}
-          {currentSlide.elements
-            .sort((a, b) => a.zIndex - b.zIndex)
-            .map(element => (
-              <ElementRenderer
-                key={element.id}
-                element={element}
-                slideId={currentSlide.id}
-                isSelected={selection.selectedElementIds.includes(element.id)}
+            {currentSlide.background.type === 'image' && currentSlide.background.imageUrl && (
+              <image
+                href={currentSlide.background.imageUrl}
+                x="0"
+                y="0"
+                width={SLIDE_WIDTH}
+                height={SLIDE_HEIGHT}
+                preserveAspectRatio="xMidYMid slice"
               />
-            ))}
-        </svg>
+            )}
+
+            {editorState.gridEnabled && <GridOverlay />}
+
+            {currentSlide.elements
+              .sort((a, b) => a.zIndex - b.zIndex)
+              .map(element => (
+                <ElementRenderer
+                  key={element.id}
+                  element={element}
+                  slideId={currentSlide.id}
+                  isSelected={selection.selectedElementIds.includes(element.id)}
+                />
+              ))}
+          </svg>
+        </div>
       </div>
     </div>
   )
@@ -170,33 +196,15 @@ function GridOverlay() {
   const gridSize = 20
   const lines = []
 
-  // Vertical lines
   for (let x = gridSize; x < SLIDE_WIDTH; x += gridSize) {
     lines.push(
-      <line
-        key={`v-${x}`}
-        x1={x}
-        y1={0}
-        x2={x}
-        y2={SLIDE_HEIGHT}
-        stroke="#ddd"
-        strokeWidth="0.5"
-      />
+      <line key={`v-${x}`} x1={x} y1={0} x2={x} y2={SLIDE_HEIGHT} stroke="#ddd" strokeWidth="0.5" />
     )
   }
 
-  // Horizontal lines
   for (let y = gridSize; y < SLIDE_HEIGHT; y += gridSize) {
     lines.push(
-      <line
-        key={`h-${y}`}
-        x1={0}
-        y1={y}
-        x2={SLIDE_WIDTH}
-        y2={y}
-        stroke="#ddd"
-        strokeWidth="0.5"
-      />
+      <line key={`h-${y}`} x1={0} y1={y} x2={SLIDE_WIDTH} y2={y} stroke="#ddd" strokeWidth="0.5" />
     )
   }
 

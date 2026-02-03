@@ -9,6 +9,7 @@ function App() {
         localStorage.setItem('ppteditor_dev', JSON.stringify(data))
         console.log('Saved:', data.name)
       }}
+      style={{ height: '100vh' }}
     />
   )
 }

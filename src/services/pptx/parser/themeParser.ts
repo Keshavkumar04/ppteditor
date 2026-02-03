@@ -11,6 +11,14 @@ import {
   DEFAULT_THEME_COLORS,
 } from './utils'
 
+/** Parsed background fill style from theme */
+export interface ThemeBgFillStyle {
+  type: 'solid' | 'gradient'
+  solidColor?: string
+  schemeClr?: string
+  gradient?: { stops: Array<{ position: number; color?: string; schemeClr?: string }>; angle: number }
+}
+
 /**
  * Parse theme XML and extract colors and fonts
  */
@@ -19,12 +27,14 @@ export function parseTheme(themeXml: string): {
   fonts: { heading: string; body: string }
   colorScheme: ColorScheme
   fontScheme: FontScheme
+  bgFillStyles: ThemeBgFillStyle[]
 } {
   const parser = new DOMParser()
   const doc = parser.parseFromString(themeXml, 'application/xml')
 
   const colors = parseThemeColors(doc)
   const fonts = parseThemeFonts(doc)
+  const bgFillStyles = parseBgFillStyleLst(doc)
 
   // Build ColorScheme
   const colorScheme: ColorScheme = {
@@ -53,7 +63,59 @@ export function parseTheme(themeXml: string): {
     minorFont: { latin: fonts.body },
   }
 
-  return { colors, fonts, colorScheme, fontScheme }
+  return { colors, fonts, colorScheme, fontScheme, bgFillStyles }
+}
+
+/**
+ * Parse background fill style list from theme fmtScheme
+ * These are referenced by bgRef idx (1001 = index 0, 1002 = index 1, etc.)
+ */
+function parseBgFillStyleLst(doc: Document): ThemeBgFillStyle[] {
+  const styles: ThemeBgFillStyle[] = []
+
+  const bgFillLst = doc.getElementsByTagName('a:bgFillStyleLst')[0]
+  if (!bgFillLst) return styles
+
+  // Iterate direct children (solidFill, gradFill, etc.)
+  for (let i = 0; i < bgFillLst.childNodes.length; i++) {
+    const child = bgFillLst.childNodes[i] as Element
+    if (!child.tagName) continue
+
+    if (child.tagName === 'a:solidFill') {
+      const srgbEl = child.getElementsByTagName('a:srgbClr')[0]
+      const schemeEl = child.getElementsByTagName('a:schemeClr')[0]
+      styles.push({
+        type: 'solid',
+        solidColor: srgbEl ? parseColor(getAttr(srgbEl, 'val') || '') : undefined,
+        schemeClr: schemeEl ? getAttr(schemeEl, 'val') || undefined : undefined,
+      })
+    } else if (child.tagName === 'a:gradFill') {
+      const gsLst = child.getElementsByTagName('a:gsLst')[0]
+      const stops: ThemeBgFillStyle['gradient'] extends undefined ? never : NonNullable<ThemeBgFillStyle['gradient']>['stops'] = []
+      if (gsLst) {
+        const gsEls = gsLst.getElementsByTagName('a:gs')
+        for (let j = 0; j < gsEls.length; j++) {
+          const gs = gsEls[j]
+          const pos = parseInt(getAttr(gs, 'pos') || '0') / 100000
+          const srgb = gs.getElementsByTagName('a:srgbClr')[0]
+          const scheme = gs.getElementsByTagName('a:schemeClr')[0]
+          stops.push({
+            position: pos,
+            color: srgb ? parseColor(getAttr(srgb, 'val') || '') : undefined,
+            schemeClr: scheme ? getAttr(scheme, 'val') || undefined : undefined,
+          })
+        }
+      }
+      const linEl = child.getElementsByTagName('a:lin')[0]
+      const angle = linEl ? parseInt(getAttr(linEl, 'ang') || '0') / 60000 : 0
+      styles.push({ type: 'gradient', gradient: { stops, angle } })
+    } else {
+      // Other fill types (blipFill, pattFill) - treat as solid placeholder
+      styles.push({ type: 'solid', schemeClr: 'bg1' })
+    }
+  }
+
+  return styles
 }
 
 /**

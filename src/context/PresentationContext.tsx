@@ -29,7 +29,7 @@ interface PresentationContextValue {
   setPresentationName: (name: string) => void
 
   // Slide operations
-  addSlide: (afterSlideId?: string) => Slide
+  addSlide: (afterSlideId?: string, layoutElements?: SlideElement[]) => Slide
   deleteSlide: (slideId: string) => void
   duplicateSlide: (slideId: string) => Slide | null
   reorderSlides: (fromIndex: number, toIndex: number) => void
@@ -192,8 +192,11 @@ export function PresentationProvider({
   }, [updatePresentation])
 
   // Slide operations
-  const addSlide = useCallback((afterSlideId?: string): Slide => {
+  const addSlide = useCallback((afterSlideId?: string, layoutElements?: SlideElement[]): Slide => {
     const newSlide = createEmptySlide(0)
+    if (layoutElements && layoutElements.length > 0) {
+      newSlide.elements = layoutElements
+    }
     const current = isControlled ? (data ?? null) : internalPresentation
     if (!current) return newSlide
 

@@ -7,10 +7,14 @@ import JSZip from 'jszip'
 import { Presentation, Slide, ColorScheme, FontScheme, Background, DEFAULT_THEME } from '@/types'
 import { generateId } from '@/utils'
 import { parseSlide, parseMasterBackground } from './parser/slideParser'
-import { parseTheme } from './parser/themeParser'
-import { extractImages } from './parser/imageParser'
+import { parseTheme, ThemeBgFillStyle } from './parser/themeParser'
+import { extractImages, parseSlideRelationships, buildSlideImageMap } from './parser/imageParser'
 import { setFontScheme, setScaleFactor } from './parser/textParser'
-import { DEFAULT_THEME_COLORS } from './parser/utils'
+import { DEFAULT_THEME_COLORS, emuToPixels } from './parser/utils'
+
+/** Placeholder position/size resolved from layout or master */
+export type PlaceholderTransform = { x: number; y: number; width: number; height: number }
+export type LayoutPlaceholders = Map<string, PlaceholderTransform>
 
 export interface ImportResult {
   success: boolean
@@ -65,7 +69,8 @@ export async function importPptx(
       }
     }
 
-    const { slideIds, presentationName, scaleFactor } = parsePresentationXml(presentationXmlContent)
+    const { slideIds, presentationName, scaleFactor, slideWidth, slideHeight } = parsePresentationXml(presentationXmlContent)
+    console.log('[Import] slideIds:', slideIds, 'slideWidth:', slideWidth, 'slideHeight:', slideHeight, 'scaleFactor:', scaleFactor)
 
     // Report theme parsing progress
     onProgress?.({
@@ -76,7 +81,7 @@ export async function importPptx(
     })
 
     // Parse ALL themes and build a theme map
-    const themeMap = new Map<string, { colors: Record<string, string>; colorScheme: ColorScheme; fontScheme: FontScheme }>()
+    const themeMap = new Map<string, { colors: Record<string, string>; colorScheme: ColorScheme; fontScheme: FontScheme; bgFillStyles: ThemeBgFillStyle[] }>()
     const themeFiles = Object.keys(zip.files).filter(f => f.match(/ppt\/theme\/theme\d+\.xml$/))
 
     for (const themeFile of themeFiles) {
@@ -85,6 +90,7 @@ export async function importPptx(
         if (themeXml) {
           const parsedTheme = parseTheme(themeXml)
           themeMap.set(themeFile, parsedTheme)
+          console.log(`[Import] Theme ${themeFile} bgFillStyles:`, parsedTheme.bgFillStyles.length, JSON.stringify(parsedTheme.bgFillStyles))
         }
       } catch (error) {
         console.warn(`Failed to parse ${themeFile}:`, error)
@@ -96,6 +102,7 @@ export async function importPptx(
       colors: { ...DEFAULT_THEME_COLORS },
       colorScheme: DEFAULT_THEME.colorScheme,
       fontScheme: DEFAULT_THEME.fontScheme,
+      bgFillStyles: [] as ThemeBgFillStyle[],
     }
     let colorScheme = defaultTheme.colorScheme
     let fontScheme = defaultTheme.fontScheme
@@ -115,8 +122,20 @@ export async function importPptx(
     // Extract all images
     const globalImageMap = await extractImages(zip)
 
-    // Build layout → master → theme mapping
-    const layoutToMasterTheme = new Map<string, { masterFile: string; themeFile: string; themeColors: Record<string, string>; background: Background }>()
+    // Build layout → master → theme mapping (with placeholder transforms)
+    interface LayoutInfo {
+      masterFile: string
+      themeFile: string
+      themeColors: Record<string, string>
+      background: Background
+      placeholders: LayoutPlaceholders
+      masterXml?: string
+      masterImageMap?: Map<string, string>
+    }
+    const layoutToMasterTheme = new Map<string, LayoutInfo>()
+
+    // Cache master placeholders to avoid re-parsing
+    const masterPlaceholderCache = new Map<string, LayoutPlaceholders>()
 
     // Parse all slide layouts and their master references
     const layoutFiles = Object.keys(zip.files).filter(f => f.match(/ppt\/slideLayouts\/slideLayout\d+\.xml$/))
@@ -143,11 +162,51 @@ export async function importPptx(
 
             const theme = themeMap.get(themeFile) || defaultTheme
 
-            // Parse master background with correct theme colors
+            // Parse master background with correct theme colors and bgFillStyles
             let background: Background = { type: 'solid', color: '#FFFFFF' }
             const masterXml = await zip.file(masterFile)?.async('string')
             if (masterXml) {
-              background = parseMasterBackground(masterXml, theme.colors, globalImageMap)
+              background = parseMasterBackground(masterXml, theme.colors, globalImageMap, theme.bgFillStyles)
+              console.log(`[Import] Master ${masterFile} bg:`, JSON.stringify(background), 'theme dk1:', theme.colors.dark1, 'lt1:', theme.colors.light1)
+            }
+
+            // Build master image map from master rels
+            let masterImageMap: Map<string, string> = new Map()
+            if (masterRels) {
+              const masterRelMap = parseSlideRelationships(masterRels)
+              masterImageMap = buildSlideImageMap(masterRelMap, globalImageMap)
+            }
+
+            // Parse master placeholders (cached)
+            let masterPlaceholders: LayoutPlaceholders
+            if (masterPlaceholderCache.has(masterFile)) {
+              masterPlaceholders = masterPlaceholderCache.get(masterFile)!
+            } else {
+              masterPlaceholders = masterXml ? parseXmlForPlaceholders(masterXml) : new Map()
+              masterPlaceholderCache.set(masterFile, masterPlaceholders)
+            }
+
+            // Parse layout placeholders
+            const layoutXml = await zip.file(layoutFile)?.async('string')
+            const layoutPlaceholders: LayoutPlaceholders = layoutXml ? parseXmlForPlaceholders(layoutXml) : new Map()
+
+            // Merge: layout overrides master (layout has higher priority)
+            const mergedPlaceholders: LayoutPlaceholders = new Map(masterPlaceholders)
+            for (const [key, val] of layoutPlaceholders) {
+              mergedPlaceholders.set(key, val)
+            }
+
+            // Also parse layout background as fallback
+            if (background.type === 'solid' && background.color === '#FFFFFF' && layoutXml) {
+              const layoutParser = new DOMParser()
+              const layoutDoc = layoutParser.parseFromString(layoutXml, 'application/xml')
+              const layoutCsld = layoutDoc.getElementsByTagName('p:cSld')[0]
+              if (layoutCsld) {
+                const layoutBg = layoutCsld.getElementsByTagName('p:bg')[0]
+                if (layoutBg) {
+                  background = parseMasterBackground(layoutXml, theme.colors, globalImageMap, theme.bgFillStyles)
+                }
+              }
             }
 
             const layoutName = layoutFile.match(/slideLayout(\d+)\.xml/)?.[1] || '1'
@@ -156,6 +215,9 @@ export async function importPptx(
               themeFile,
               themeColors: theme.colors,
               background,
+              placeholders: mergedPlaceholders,
+              masterXml: masterXml || undefined,
+              masterImageMap,
             })
           }
         }
@@ -200,6 +262,10 @@ export async function importPptx(
         let slideRelsXml = ''
         let slideThemeColors = defaultTheme.colors
         let slideMasterBackground: Background = { type: 'solid', color: '#FFFFFF' }
+        let slideLayoutPlaceholders: LayoutPlaceholders = new Map()
+        let layoutFile = ''
+        let slideMasterXml: string | undefined
+        let slideMasterImageMap: Map<string, string> | undefined
 
         try {
           slideRelsXml = await zip.file(`ppt/slides/_rels/slide${slideNum}.xml.rels`)?.async('string') || ''
@@ -207,18 +273,36 @@ export async function importPptx(
           // Find layout reference
           const layoutMatch = slideRelsXml.match(/Target="\.\.\/slideLayouts\/slideLayout(\d+)\.xml"/)
           if (layoutMatch) {
+            layoutFile = `ppt/slideLayouts/slideLayout${layoutMatch[1]}.xml`
             const layoutInfo = layoutToMasterTheme.get(layoutMatch[1])
             if (layoutInfo) {
               slideThemeColors = layoutInfo.themeColors
               slideMasterBackground = layoutInfo.background
+              slideLayoutPlaceholders = layoutInfo.placeholders
+              slideMasterXml = layoutInfo.masterXml
+              slideMasterImageMap = layoutInfo.masterImageMap
             }
           }
         } catch {
           // Relationships file might not exist
         }
 
-        // Parse slide with correct theme colors and master background
-        const slide = parseSlide(slideXml, slideRelsXml, i, slideThemeColors, globalImageMap, slideMasterBackground, scaleFactor)
+        // Also get images from the layout's relationships for layout image elements
+        let layoutImageMap: Map<string, string> = new Map()
+        if (layoutFile) {
+          try {
+            const layoutRelsFile = layoutFile.replace('slideLayouts/', 'slideLayouts/_rels/') + '.rels'
+            const layoutRelsXml = await zip.file(layoutRelsFile)?.async('string')
+            if (layoutRelsXml) {
+              const layoutRelMap = parseSlideRelationships(layoutRelsXml)
+              layoutImageMap = buildSlideImageMap(layoutRelMap, globalImageMap)
+            }
+          } catch { /* ignore */ }
+        }
+
+        // Parse slide with correct theme colors, master background, layout and master elements
+        const slide = parseSlide(slideXml, slideRelsXml, i, slideThemeColors, globalImageMap, slideMasterBackground, scaleFactor, slideLayoutPlaceholders, layoutImageMap, layoutFile ? await zip.file(layoutFile)?.async('string') || '' : '', slideMasterXml, slideMasterImageMap)
+        console.log(`[Import] Slide ${i + 1}: ${slide.elements.length} elements, bg: ${slide.background.type}`)
         slides.push(slide)
       } catch (error) {
         console.warn(`Failed to parse slide ${slideNum}:`, error)
@@ -284,6 +368,52 @@ export async function importPptx(
 const TARGET_WIDTH = 960
 const TARGET_HEIGHT = 540
 const EMU_PER_PIXEL = 9525
+
+/**
+ * Parse a layout or master XML to extract placeholder transforms.
+ * Returns a map keyed by "type:<phType>" and "idx:<phIdx>" for flexible lookup.
+ */
+function parseXmlForPlaceholders(xml: string): LayoutPlaceholders {
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(xml, 'application/xml')
+  const placeholders: LayoutPlaceholders = new Map()
+
+  const spEls = doc.getElementsByTagName('p:sp')
+  for (let i = 0; i < spEls.length; i++) {
+    const sp = spEls[i]
+
+    // Find placeholder element
+    const phEls = sp.getElementsByTagName('p:ph')
+    if (phEls.length === 0) continue
+    const ph = phEls[0]
+
+    // Get transform
+    const xfrmEls = sp.getElementsByTagName('a:xfrm')
+    if (xfrmEls.length === 0) continue
+    const xfrm = xfrmEls[0]
+
+    const offEls = xfrm.getElementsByTagName('a:off')
+    const extEls = xfrm.getElementsByTagName('a:ext')
+    if (offEls.length === 0 || extEls.length === 0) continue
+
+    const x = emuToPixels(parseInt(offEls[0].getAttribute('x') || '0', 10))
+    const y = emuToPixels(parseInt(offEls[0].getAttribute('y') || '0', 10))
+    const width = emuToPixels(parseInt(extEls[0].getAttribute('cx') || '0', 10))
+    const height = emuToPixels(parseInt(extEls[0].getAttribute('cy') || '0', 10))
+
+    if (width === 0 && height === 0) continue
+
+    const phType = ph.getAttribute('type') || 'body'
+    const phIdx = ph.getAttribute('idx') || ''
+
+    placeholders.set(`type:${phType}`, { x, y, width, height })
+    if (phIdx) {
+      placeholders.set(`idx:${phIdx}`, { x, y, width, height })
+    }
+  }
+
+  return placeholders
+}
 
 /**
  * Parse presentation.xml to get slide order, name, and dimensions

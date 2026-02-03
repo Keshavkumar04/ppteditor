@@ -108,11 +108,13 @@ const PRESET_GEOMETRY_MAP: Record<string, ShapeType> = {
 
 /**
  * Parse a shape element (p:sp)
+ * If fallback position/size is provided, it will be used when xfrm is missing.
  */
 export function parseShape(
   spEl: Element,
   _slideIndex: number,
-  themeColors: Record<string, string> = DEFAULT_THEME_COLORS
+  themeColors: Record<string, string> = DEFAULT_THEME_COLORS,
+  fallback?: { x: number; y: number; width: number; height: number },
 ): ShapeElement | null {
   // Get shape properties (p:spPr)
   const spPrEl = findChild(spEl, 'spPr')
@@ -120,24 +122,36 @@ export function parseShape(
 
   // Get transformation (a:xfrm)
   const xfrmEl = findChild(spPrEl, 'xfrm')
-  if (!xfrmEl) return null
 
-  // Get position and size
-  const offEl = findChild(xfrmEl, 'off')
-  const extEl = findChild(xfrmEl, 'ext')
-  if (!offEl || !extEl) return null
+  let x = 0, y = 0, width = 0, height = 0, rotation = 0
 
-  const x = emuToPixels(getNumericAttr(offEl, 'x', 0))
-  const y = emuToPixels(getNumericAttr(offEl, 'y', 0))
-  const width = emuToPixels(getNumericAttr(extEl, 'cx', 0))
-  const height = emuToPixels(getNumericAttr(extEl, 'cy', 0))
+  if (xfrmEl) {
+    const offEl = findChild(xfrmEl, 'off')
+    const extEl = findChild(xfrmEl, 'ext')
 
-  // Skip if no size
+    if (offEl) {
+      x = emuToPixels(getNumericAttr(offEl, 'x', 0))
+      y = emuToPixels(getNumericAttr(offEl, 'y', 0))
+    }
+    if (extEl) {
+      width = emuToPixels(getNumericAttr(extEl, 'cx', 0))
+      height = emuToPixels(getNumericAttr(extEl, 'cy', 0))
+    }
+
+    const rot = getNumericAttr(xfrmEl, 'rot', 0)
+    rotation = rot / 60000
+  }
+
+  // Use fallback if no position/size from xfrm
+  if (width === 0 && height === 0 && fallback) {
+    x = fallback.x
+    y = fallback.y
+    width = fallback.width
+    height = fallback.height
+  }
+
+  // Skip if still no size
   if (width === 0 && height === 0) return null
-
-  // Get rotation
-  const rot = getNumericAttr(xfrmEl, 'rot', 0)
-  const rotation = rot / 60000 // Convert from 60000ths of a degree
 
   // Get shape type from preset geometry
   const prstGeomEl = findChild(spPrEl, 'prstGeom')

@@ -186,6 +186,7 @@ export interface ImageElement extends BaseElement {
   filters?: ImageFilters
   stroke?: Stroke
   shadow?: Shadow
+  clipShape?: 'ellipse' | 'rectangle'
 }
 
 export interface ImageCrop {

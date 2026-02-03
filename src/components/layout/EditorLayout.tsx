@@ -1,14 +1,15 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Header } from './Header'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { PanelRightOpen, PanelRightClose } from 'lucide-react'
 import { SlidePanel } from '@/components/slides/SlidePanel'
 import { SlideCanvas } from '@/components/canvas/SlideCanvas'
 import { MainToolbar } from '@/components/toolbar/MainToolbar'
+import { FormattingToolbar } from '@/components/toolbar/FormattingToolbar'
 import { PropertiesPanel } from '@/components/properties/PropertiesPanel'
-import { ImportDialog } from '@/components/dialogs/ImportDialog'
 import { ThemePickerDialog } from '@/components/dialogs/ThemePickerDialog'
 import { ThemeEditorDialog } from '@/components/dialogs/ThemeEditorDialog'
 import { useEditor, usePresentation, useSelection, useHistory } from '@/context'
 import { exportPptx, downloadPptx } from '@/services/pptx'
+import { importPptx, isPptxFile } from '@/services/pptx'
 import { cn } from '@/lib/utils'
 import { PresentationTheme } from '@/types'
 
@@ -17,21 +18,23 @@ interface EditorLayoutProps {
   showHeader?: boolean
 }
 
-export function EditorLayout({ onExport, showHeader }: EditorLayoutProps) {
+export function EditorLayout({ onExport }: EditorLayoutProps) {
   const { editorState } = useEditor()
   const {
     presentation,
     createNewPresentation,
+    loadPresentation,
     requestSave,
   } = usePresentation()
   const { copy, cut, paste, deleteSelected, selectAll } = useSelection()
   const { undo, redo, canUndo, canRedo } = useHistory()
-  const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [themePickerOpen, setThemePickerOpen] = useState(false)
   const [themeEditorOpen, setThemeEditorOpen] = useState(false)
   const [editingTheme, setEditingTheme] = useState<PresentationTheme | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [rightPanelOpen, setRightPanelOpen] = useState(false)
 
-  const { leftSidebar, rightSidebar } = editorState.panelVisibility
+  const { leftSidebar } = editorState.panelVisibility
 
   // Initialize with a new presentation if none exists
   useEffect(() => {
@@ -89,8 +92,32 @@ export function EditorLayout({ onExport, showHeader }: EditorLayoutProps) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleKeyDown])
 
+  // Direct file picker for import (no modal)
   const handleImport = () => {
-    setImportDialogOpen(true)
+    fileInputRef.current?.click()
+  }
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!isPptxFile(file)) {
+      alert('Please select a valid .pptx file')
+      return
+    }
+
+    const result = await importPptx(file)
+
+    if (result.success && result.presentation) {
+      loadPresentation(result.presentation)
+    } else {
+      alert(`Import failed: ${result.error || 'Unknown error'}`)
+    }
+
+    // Reset input so same file can be selected again
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
   }
 
   const handleTheme = () => {
@@ -139,50 +166,65 @@ export function EditorLayout({ onExport, showHeader }: EditorLayoutProps) {
     }
   }
 
-  const headerVisible = showHeader !== false
-
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
-      {/* Header */}
-      {headerVisible && (
-        <Header
-          className="h-12 flex-shrink-0"
-          onImport={handleImport}
-          onExport={handleExport}
-          onTheme={handleTheme}
-        />
-      )}
+    <div className="h-full flex flex-col bg-background overflow-hidden">
+      {/* Hidden file input for import */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".pptx,.pptm"
+        className="hidden"
+        onChange={handleFileSelected}
+      />
 
-      {/* Main Toolbar */}
-      <MainToolbar className="h-10 flex-shrink-0 border-b" />
+      {/* Main Toolbar (includes File, Edit, Theme, Undo/Redo + insert tools) */}
+      <MainToolbar
+        className="h-8 flex-shrink-0 border-b"
+        onImport={handleImport}
+        onExport={handleExport}
+        onTheme={handleTheme}
+      />
+
+      {/* Formatting Toolbar (shows when text element selected) */}
+      <FormattingToolbar className="h-8 flex-shrink-0" />
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar - Slide Panel */}
         {leftSidebar && (
-          <div className="w-52 flex-shrink-0 border-r bg-muted/30 overflow-hidden">
+          <div className="w-40 flex-shrink-0 border-r bg-muted/30 overflow-hidden">
             <SlidePanel />
           </div>
         )}
 
         {/* Canvas Area */}
-        <div className="flex-1 overflow-hidden bg-neutral-200">
+        <div className="flex-1 overflow-hidden relative">
           <SlideCanvas />
+          {/* Toggle right panel button */}
+          <button
+            onClick={() => setRightPanelOpen(prev => !prev)}
+            className="absolute top-2 right-2 z-10 p-1 rounded bg-background/80 border shadow-sm hover:bg-background transition-colors"
+            title={rightPanelOpen ? 'Hide Properties' : 'Show Properties'}
+          >
+            {rightPanelOpen ? (
+              <PanelRightClose className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <PanelRightOpen className="h-4 w-4 text-muted-foreground" />
+            )}
+          </button>
         </div>
 
-        {/* Right Sidebar - Properties Panel */}
-        {rightSidebar && (
-          <div className="w-64 flex-shrink-0 border-l bg-background overflow-hidden">
-            <PropertiesPanel />
-          </div>
-        )}
+        {/* Right Sidebar - Properties Panel (collapsible) */}
+        <div className={cn(
+          'flex-shrink-0 border-l bg-background overflow-hidden transition-all duration-200',
+          rightPanelOpen ? 'w-56' : 'w-0 border-l-0'
+        )}>
+          {rightPanelOpen && <PropertiesPanel />}
+        </div>
       </div>
 
       {/* Status Bar */}
-      <StatusBar className="h-6 flex-shrink-0 border-t" />
-
-      {/* Import Dialog */}
-      <ImportDialog open={importDialogOpen} onOpenChange={setImportDialogOpen} />
+      <StatusBar className="h-5 flex-shrink-0 border-t" />
 
       {/* Theme Picker Dialog */}
       <ThemePickerDialog
@@ -221,20 +263,17 @@ function StatusBar({ className }: StatusBarProps) {
     if (!date) return null
     const now = new Date()
     const diff = now.getTime() - date.getTime()
-    if (diff < 60000) return 'Saved just now'
+    if (diff < 60000) return 'Saved'
     if (diff < 3600000) return `Saved ${Math.floor(diff / 60000)}m ago`
     return `Saved at ${date.toLocaleTimeString()}`
   }
 
   return (
-    <div className={cn('flex items-center justify-between px-4 text-xs text-muted-foreground bg-muted/30', className)}>
-      <div className="flex items-center gap-4">
-        {/* Slide count */}
+    <div className={cn('flex items-center justify-between px-3 text-[10px] text-muted-foreground bg-muted/30', className)}>
+      <div className="flex items-center gap-3">
         <span>
           Slide {currentSlideIndex + 1} of {totalSlides}
         </span>
-
-        {/* Selection info */}
         {selection.selectedElementIds.length > 0 && (
           <span>
             {selection.selectedElementIds.length} element{selection.selectedElementIds.length > 1 ? 's' : ''} selected
@@ -242,14 +281,11 @@ function StatusBar({ className }: StatusBarProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* Save status */}
+      <div className="flex items-center gap-3">
         <span className={isDirty ? 'text-yellow-600' : 'text-green-600'}>
-          {isDirty ? 'Unsaved changes' : formatLastSaved(lastSaved) || 'Saved'}
+          {isDirty ? 'Unsaved' : formatLastSaved(lastSaved) || 'Saved'}
         </span>
-
-        {/* Zoom control */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
           <button
             onClick={() => setZoom(editorState.zoom - 0.1)}
             className="hover:text-foreground"
@@ -257,7 +293,7 @@ function StatusBar({ className }: StatusBarProps) {
           >
             -
           </button>
-          <span className="w-12 text-center">{Math.round(editorState.zoom * 100)}%</span>
+          <span className="w-10 text-center">{Math.round(editorState.zoom * 100)}%</span>
           <button
             onClick={() => setZoom(editorState.zoom + 0.1)}
             className="hover:text-foreground"

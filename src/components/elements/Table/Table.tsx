@@ -120,7 +120,7 @@ export function Table({ element, slideId, isSelected: _isSelected }: TableProps)
       y={0}
       width={element.size.width}
       height={element.size.height}
-      style={{ overflow: 'visible' }}
+      style={{ overflow: 'hidden' }}
     >
       <div
         // @ts-expect-error xmlns is valid for foreignObject content

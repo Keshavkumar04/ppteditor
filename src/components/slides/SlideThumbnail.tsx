@@ -46,7 +46,7 @@ export const SlideThumbnail = memo(function SlideThumbnail({
   }
 
   // Calculate thumbnail dimensions (maintaining aspect ratio)
-  const thumbnailWidth = 160
+  const thumbnailWidth = 120
   const thumbnailHeight = thumbnailWidth * (SLIDE_HEIGHT / SLIDE_WIDTH)
 
   // Get background style

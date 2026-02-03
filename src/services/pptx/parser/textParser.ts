@@ -64,10 +64,14 @@ export function parseTextBody(
   themeColors: Record<string, string> = DEFAULT_THEME_COLORS
 ): TextContent {
   const paragraphs: Paragraph[] = []
+
+  // Parse list style defaults (a:lstStyle) for fallback text properties
+  const lstStyleDefaults = parseLstStyleDefaults(txBody, themeColors)
+
   const pElements = findAllChildren(txBody, 'p')
 
   for (const pEl of pElements) {
-    const paragraph = parseParagraph(pEl, themeColors)
+    const paragraph = parseParagraph(pEl, themeColors, lstStyleDefaults)
     if (paragraph.runs.length > 0 || paragraphs.length === 0) {
       paragraphs.push(paragraph)
     }
@@ -90,16 +94,28 @@ export function parseTextBody(
  */
 function parseParagraph(
   pEl: Element,
-  themeColors: Record<string, string>
+  themeColors: Record<string, string>,
+  lstStyleDefaults?: Partial<TextStyle>
 ): Paragraph {
   const runs: TextRun[] = []
   const alignment = parseAlignment(pEl)
+
+  // Check paragraph-level default run properties (a:pPr > a:defRPr)
+  const pPrEl = findChild(pEl, 'pPr')
+  let paraDefaults = lstStyleDefaults
+  if (pPrEl) {
+    const defRPrEl = findChild(pPrEl, 'defRPr')
+    if (defRPrEl) {
+      const pDefStyle = parseTextRunProperties(defRPrEl, themeColors)
+      paraDefaults = { ...lstStyleDefaults, ...stripDefaults(pDefStyle) }
+    }
+  }
 
   // Find text runs (a:r elements)
   const rElements = findAllChildren(pEl, 'r')
 
   for (const rEl of rElements) {
-    const run = parseTextRun(rEl, themeColors)
+    const run = parseTextRun(rEl, themeColors, paraDefaults)
     if (run) {
       runs.push(run)
     }
@@ -108,7 +124,7 @@ function parseParagraph(
   // Handle field elements (a:fld) - like page numbers, dates
   const fldElements = findAllChildren(pEl, 'fld')
   for (const fldEl of fldElements) {
-    const run = parseTextField(fldEl, themeColors)
+    const run = parseTextField(fldEl, themeColors, paraDefaults)
     if (run) {
       runs.push(run)
     }
@@ -118,10 +134,13 @@ function parseParagraph(
   if (runs.length === 0) {
     const textContent = getTextContent(pEl).trim()
     if (textContent) {
+      const style = paraDefaults
+        ? { ...getDefaultTextStyle(), ...paraDefaults }
+        : getDefaultTextStyle()
       runs.push({
         id: generateId(),
         text: textContent,
-        style: getDefaultTextStyle(),
+        style,
       })
     }
   }
@@ -134,7 +153,8 @@ function parseParagraph(
  */
 function parseTextRun(
   rEl: Element,
-  themeColors: Record<string, string>
+  themeColors: Record<string, string>,
+  defaults?: Partial<TextStyle>
 ): TextRun | null {
   // Get text content (a:t element)
   const tEl = findChild(rEl, 't')
@@ -145,9 +165,12 @@ function parseTextRun(
 
   // Get run properties (a:rPr)
   const rPrEl = findChild(rEl, 'rPr')
-  const style = rPrEl
-    ? parseTextRunProperties(rPrEl, themeColors)
+  const baseStyle = defaults
+    ? { ...getDefaultTextStyle(), ...defaults }
     : getDefaultTextStyle()
+  const style = rPrEl
+    ? mergeRunProperties(rPrEl, themeColors, baseStyle)
+    : baseStyle
 
   return { id: generateId(), text, style }
 }
@@ -157,16 +180,20 @@ function parseTextRun(
  */
 function parseTextField(
   fldEl: Element,
-  themeColors: Record<string, string>
+  themeColors: Record<string, string>,
+  defaults?: Partial<TextStyle>
 ): TextRun | null {
   const tEl = findChild(fldEl, 't')
   if (!tEl) return null
 
   const text = getTextContent(tEl)
+  const baseStyle = defaults
+    ? { ...getDefaultTextStyle(), ...defaults }
+    : getDefaultTextStyle()
   const rPrEl = findChild(fldEl, 'rPr')
   const style = rPrEl
-    ? parseTextRunProperties(rPrEl, themeColors)
-    : getDefaultTextStyle()
+    ? mergeRunProperties(rPrEl, themeColors, baseStyle)
+    : baseStyle
 
   return { id: generateId(), text, style }
 }
@@ -233,6 +260,97 @@ function parseTextRunProperties(
     if (color) {
       style.color = color
     }
+  }
+
+  return style
+}
+
+/**
+ * Parse list style defaults from a:lstStyle element
+ * Extracts default font, size, color from a:lvl1pPr > a:defRPr
+ */
+function parseLstStyleDefaults(
+  txBody: Element,
+  themeColors: Record<string, string>
+): Partial<TextStyle> | undefined {
+  const lstStyleEl = findChild(txBody, 'lstStyle')
+  if (!lstStyleEl) return undefined
+
+  // Check level 1 paragraph properties (most common default)
+  const lvl1El = findChild(lstStyleEl, 'lvl1pPr')
+  if (!lvl1El) return undefined
+
+  const defRPrEl = findChild(lvl1El, 'defRPr')
+  if (!defRPrEl) return undefined
+
+  const style = parseTextRunProperties(defRPrEl, themeColors)
+  return stripDefaults(style)
+}
+
+/**
+ * Strip default values from a TextStyle, leaving only explicitly-set properties
+ */
+function stripDefaults(style: TextStyle): Partial<TextStyle> {
+  const result: Partial<TextStyle> = {}
+  const defaults = getDefaultTextStyle()
+
+  if (style.fontFamily !== defaults.fontFamily) result.fontFamily = style.fontFamily
+  if (style.fontSize !== defaults.fontSize) result.fontSize = style.fontSize
+  if (style.fontWeight !== defaults.fontWeight) result.fontWeight = style.fontWeight
+  if (style.fontStyle !== defaults.fontStyle) result.fontStyle = style.fontStyle
+  if (style.textDecoration !== defaults.textDecoration) result.textDecoration = style.textDecoration
+  if (style.color !== defaults.color) result.color = style.color
+
+  return result
+}
+
+/**
+ * Merge run properties on top of a base style
+ * Only overrides properties that are explicitly set in the run
+ */
+function mergeRunProperties(
+  rPrEl: Element,
+  themeColors: Record<string, string>,
+  baseStyle: TextStyle
+): TextStyle {
+  const style = { ...baseStyle }
+
+  // Font size
+  const sz = getNumericAttr(rPrEl, 'sz', 0)
+  if (sz > 0) {
+    style.fontSize = Math.round(hundredthsPointToPoints(sz) * currentScaleFactor)
+  }
+
+  // Bold
+  const bold = getAttr(rPrEl, 'b')
+  if (bold === '1' || bold === 'true') style.fontWeight = 'bold'
+  else if (bold === '0' || bold === 'false') style.fontWeight = 'normal'
+
+  // Italic
+  const italic = getAttr(rPrEl, 'i')
+  if (italic === '1' || italic === 'true') style.fontStyle = 'italic'
+  else if (italic === '0' || italic === 'false') style.fontStyle = 'normal'
+
+  // Underline
+  const underline = getAttr(rPrEl, 'u')
+  if (underline && underline !== 'none') style.textDecoration = 'underline'
+
+  // Strikethrough
+  const strike = getAttr(rPrEl, 'strike')
+  if (strike && strike !== 'noStrike') style.textDecoration = 'line-through'
+
+  // Font family
+  const latinEl = findChild(rPrEl, 'latin')
+  if (latinEl) {
+    const typeface = getAttr(latinEl, 'typeface')
+    if (typeface) style.fontFamily = resolveThemeFont(typeface)
+  }
+
+  // Color
+  const solidFillEl = findChild(rPrEl, 'solidFill')
+  if (solidFillEl) {
+    const color = parseSolidFill(solidFillEl, themeColors)
+    if (color) style.color = color
   }
 
   return style

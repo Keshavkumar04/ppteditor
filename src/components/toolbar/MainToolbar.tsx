@@ -14,6 +14,12 @@ import {
   Triangle,
   Star,
   ArrowRight,
+  ChevronDown,
+  Undo2,
+  Redo2,
+  Palette,
+  FolderOpen,
+  Download,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -39,6 +45,7 @@ import {
   useEditor,
   usePresentation,
   useSelection,
+  useHistory,
 } from '@/context'
 import {
   TextElement,
@@ -57,12 +64,16 @@ import { TableGridPicker } from '@/components/elements/Table'
 
 interface MainToolbarProps {
   className?: string
+  onImport?: () => void
+  onExport?: () => void
+  onTheme?: () => void
 }
 
-export function MainToolbar({ className }: MainToolbarProps) {
+export function MainToolbar({ className, onImport, onExport, onTheme }: MainToolbarProps) {
   const { editorState, setActiveTool, zoomIn, zoomOut, zoomTo100, toggleGrid } = useEditor()
   const { presentation, addElement } = usePresentation()
   const { selectElements } = useSelection()
+  const { canUndo, canRedo, undo, redo } = useHistory()
   const [tablePopoverOpen, setTablePopoverOpen] = useState(false)
 
   const currentSlide = presentation?.slides.find(
@@ -221,7 +232,69 @@ export function MainToolbar({ className }: MainToolbarProps) {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className={cn('flex items-center gap-1 px-4 bg-muted/30', className)}>
+      <div className={cn('flex items-center gap-1 px-2 bg-muted/30', className)}>
+        {/* File Menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="gap-1 h-7 px-2 text-xs">
+              File
+              <ChevronDown className="h-3 w-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start">
+            <DropdownMenuItem onClick={onImport}>
+              <FolderOpen className="h-4 w-4 mr-2" />
+              Import PPTX...
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onExport} disabled={!presentation}>
+              <Download className="h-4 w-4 mr-2" />
+              Export as PPTX
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        {/* Theme Button */}
+        <Button variant="ghost" size="sm" className="gap-1 h-7 px-2 text-xs" onClick={onTheme}>
+          <Palette className="h-3 w-3" />
+          Theme
+        </Button>
+
+        <Separator orientation="vertical" className="h-5 mx-1" />
+
+        {/* Undo/Redo Quick Buttons */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => undo()}
+              disabled={!canUndo}
+              title="Undo (Ctrl+Z)"
+              className="h-7 w-7"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Undo (Ctrl+Z)</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => redo()}
+              disabled={!canRedo}
+              title="Redo (Ctrl+Y)"
+              className="h-7 w-7"
+            >
+              <Redo2 className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Redo (Ctrl+Y)</TooltipContent>
+        </Tooltip>
+
+        <Separator orientation="vertical" className="h-5 mx-1" />
+
         {/* Selection Tool */}
         <Tooltip>
           <TooltipTrigger asChild>
@@ -229,14 +302,15 @@ export function MainToolbar({ className }: MainToolbarProps) {
               variant={editorState.activeTool === 'select' ? 'secondary' : 'ghost'}
               size="icon-sm"
               onClick={() => setActiveTool('select')}
+              className="h-7 w-7"
             >
-              <MousePointer className="h-4 w-4" />
+              <MousePointer className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>Select (V)</TooltipContent>
         </Tooltip>
 
-        <Separator orientation="vertical" className="h-6 mx-1" />
+        <Separator orientation="vertical" className="h-5 mx-1" />
 
         {/* Insert Text */}
         <Tooltip>
@@ -246,8 +320,9 @@ export function MainToolbar({ className }: MainToolbarProps) {
               size="icon-sm"
               onClick={handleInsertText}
               disabled={!currentSlide}
+              className="h-7 w-7"
             >
-              <Type className="h-4 w-4" />
+              <Type className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>Insert Text Box</TooltipContent>
@@ -258,8 +333,8 @@ export function MainToolbar({ className }: MainToolbarProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm" disabled={!currentSlide}>
-                  <Square className="h-4 w-4" />
+                <Button variant="ghost" size="icon-sm" disabled={!currentSlide} className="h-7 w-7">
+                  <Square className="h-3.5 w-3.5" />
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
@@ -316,8 +391,9 @@ export function MainToolbar({ className }: MainToolbarProps) {
               size="icon-sm"
               onClick={handleInsertImage}
               disabled={!currentSlide}
+              className="h-7 w-7"
             >
-              <Image className="h-4 w-4" />
+              <Image className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>Insert Image</TooltipContent>
@@ -332,8 +408,9 @@ export function MainToolbar({ className }: MainToolbarProps) {
                   variant="ghost"
                   size="icon-sm"
                   disabled={!currentSlide}
+                  className="h-7 w-7"
                 >
-                  <Table className="h-4 w-4" />
+                  <Table className="h-3.5 w-3.5" />
                 </Button>
               </PopoverTrigger>
             </TooltipTrigger>
@@ -353,20 +430,21 @@ export function MainToolbar({ className }: MainToolbarProps) {
               variant={editorState.gridEnabled ? 'secondary' : 'ghost'}
               size="icon-sm"
               onClick={toggleGrid}
+              className="h-7 w-7"
             >
-              <Grid className="h-4 w-4" />
+              <Grid className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>Toggle Grid</TooltipContent>
         </Tooltip>
 
-        <Separator orientation="vertical" className="h-6 mx-1" />
+        <Separator orientation="vertical" className="h-5 mx-1" />
 
         {/* Zoom Controls */}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={zoomOut}>
-              <ZoomOut className="h-4 w-4" />
+            <Button variant="ghost" size="icon-sm" onClick={zoomOut} className="h-7 w-7">
+              <ZoomOut className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>Zoom Out</TooltipContent>
@@ -374,15 +452,15 @@ export function MainToolbar({ className }: MainToolbarProps) {
 
         <button
           onClick={zoomTo100}
-          className="text-sm text-muted-foreground hover:text-foreground w-14 text-center"
+          className="text-xs text-muted-foreground hover:text-foreground w-12 text-center"
         >
           {Math.round(editorState.zoom * 100)}%
         </button>
 
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button variant="ghost" size="icon-sm" onClick={zoomIn}>
-              <ZoomIn className="h-4 w-4" />
+            <Button variant="ghost" size="icon-sm" onClick={zoomIn} className="h-7 w-7">
+              <ZoomIn className="h-3.5 w-3.5" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>Zoom In</TooltipContent>
