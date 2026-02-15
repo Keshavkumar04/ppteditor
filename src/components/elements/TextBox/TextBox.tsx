@@ -60,6 +60,15 @@ export function TextBox({
     }
   }, [onStopEditing])
 
+  // Auto-resize text box height when content overflows
+  const handleContentHeightChange = useCallback((contentHeight: number) => {
+    if (contentHeight > size.height) {
+      updateElement(slideId, element.id, {
+        size: { ...size, height: contentHeight },
+      })
+    }
+  }, [slideId, element.id, size, updateElement])
+
   if (isEditing) {
     return (
       <foreignObject
@@ -76,6 +85,7 @@ export function TextBox({
           onSelectionChange={handleSelectionChange}
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
+          onContentHeightChange={handleContentHeightChange}
         />
       </foreignObject>
     )
@@ -125,6 +135,7 @@ export function TextBox({
             justifyContent: style.verticalAlign === 'middle' ? 'center' : style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
             overflow: 'hidden',
             pointerEvents: 'none',
+            wordWrap: style.wordWrap ? 'break-word' : 'normal',
           }}
         >
           {content.paragraphs.map((paragraph, pIndex) => {

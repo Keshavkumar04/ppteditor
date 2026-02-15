@@ -13,6 +13,7 @@ interface RichTextEditorProps {
   onSelectionChange?: (selection: TextSelection | null, style: Partial<TextStyle> | null) => void
   onBlur: () => void
   onKeyDown?: (e: React.KeyboardEvent) => void
+  onContentHeightChange?: (height: number) => void
 }
 
 export function RichTextEditor({
@@ -22,6 +23,7 @@ export function RichTextEditor({
   onSelectionChange,
   onBlur,
   onKeyDown,
+  onContentHeightChange,
 }: RichTextEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null)
   const isComposingRef = useRef(false)
@@ -82,11 +84,16 @@ export function RichTextEditor({
     onChange(newContent)
   }, [onChange])
 
-  // Handle blur - save content
+  // Handle blur - save content and report height for auto-resize
   const handleBlur = useCallback((_e: React.FocusEvent) => {
     saveContent()
+    // Measure actual content height before unmounting so the text box can auto-grow
+    if (editorRef.current && onContentHeightChange) {
+      const scrollHeight = editorRef.current.scrollHeight
+      onContentHeightChange(scrollHeight)
+    }
     onBlur()
-  }, [saveContent, onBlur])
+  }, [saveContent, onBlur, onContentHeightChange])
 
   // Handle keyboard shortcuts
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {

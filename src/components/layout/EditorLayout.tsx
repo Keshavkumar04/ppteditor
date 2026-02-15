@@ -11,7 +11,8 @@ import { useEditor, usePresentation, useSelection, useHistory } from '@/context'
 import { exportPptx, downloadPptx } from '@/services/pptx'
 import { importPptx, isPptxFile } from '@/services/pptx'
 import { cn } from '@/lib/utils'
-import { PresentationTheme } from '@/types'
+import { PresentationTheme, TextElement, DEFAULT_TEXT_STYLE, DEFAULT_TEXTBOX_STYLE, SLIDE_WIDTH, SLIDE_HEIGHT } from '@/types'
+import { generateId } from '@/utils'
 
 interface EditorLayoutProps {
   onExport?: (blob: Blob, filename: string) => void
@@ -25,8 +26,9 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
     createNewPresentation,
     loadPresentation,
     requestSave,
+    addElement,
   } = usePresentation()
-  const { copy, cut, paste, deleteSelected, selectAll } = useSelection()
+  const { copy, cut, paste, deleteSelected, selectAll, hasClipboard } = useSelection()
   const { undo, redo, canUndo, canRedo } = useHistory()
   const [themePickerOpen, setThemePickerOpen] = useState(false)
   const [themeEditorOpen, setThemeEditorOpen] = useState(false)
@@ -42,6 +44,44 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
       createNewPresentation()
     }
   }, [presentation, createNewPresentation])
+
+  // Read system clipboard and create a text box with the content
+  const handleSystemClipboardPaste = useCallback(async () => {
+    const slideId = editorState.currentSlideId ?? presentation?.slides[0]?.id
+    if (!slideId) return
+
+    try {
+      const text = await navigator.clipboard.readText()
+      if (!text.trim()) return
+
+      const textElement: TextElement = {
+        id: generateId(),
+        type: 'text',
+        position: {
+          x: Math.round((SLIDE_WIDTH - 400) / 2),
+          y: Math.round((SLIDE_HEIGHT - 120) / 2),
+        },
+        size: { width: 400, height: 120 },
+        zIndex: 0,
+        content: {
+          paragraphs: [{
+            id: generateId(),
+            runs: [{
+              id: generateId(),
+              text,
+              style: DEFAULT_TEXT_STYLE,
+            }],
+            alignment: 'left',
+          }],
+        },
+        style: DEFAULT_TEXTBOX_STYLE,
+      }
+
+      addElement(slideId, textElement)
+    } catch {
+      // Clipboard API not available or permission denied — silently ignore
+    }
+  }, [editorState.currentSlideId, presentation?.slides, addElement])
 
   // Global keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -77,7 +117,13 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
       cut()
     } else if (isMod && e.key === 'v') {
       e.preventDefault()
-      paste()
+      if (hasClipboard) {
+        // Internal clipboard has copied elements — paste them
+        paste()
+      } else {
+        // No internal clipboard — read system clipboard and create a text box
+        handleSystemClipboardPaste()
+      }
     } else if (isMod && e.key === 'a') {
       e.preventDefault()
       selectAll()
@@ -85,7 +131,7 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
       e.preventDefault()
       deleteSelected()
     }
-  }, [copy, cut, paste, selectAll, deleteSelected, undo, redo, canUndo, canRedo, requestSave])
+  }, [copy, cut, paste, hasClipboard, handleSystemClipboardPaste, selectAll, deleteSelected, undo, redo, canUndo, canRedo, requestSave])
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown)

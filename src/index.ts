@@ -5,6 +5,9 @@ import './styles/editor.css'
 // Main component
 export { PresentationEditor } from './components/PresentationEditor'
 
+// Ref handle type (for useRef<PresentationEditorHandle>)
+export type { PresentationEditorHandle } from './components/PresentationEditor'
+
 // Props type
 export type { PresentationEditorProps } from './types/props'
 

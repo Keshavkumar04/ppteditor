@@ -1,4 +1,5 @@
-import { JSX } from 'react/jsx-runtime';
+import { ForwardRefExoticComponent } from 'react';
+import { RefAttributes } from 'react';
 
 export declare interface Background {
     type: 'solid' | 'gradient' | 'image' | 'pattern';
@@ -276,7 +277,16 @@ export declare interface Presentation {
     metadata: PresentationMetadata;
 }
 
-export declare function PresentationEditor(props: PresentationEditorProps): JSX.Element;
+export declare const PresentationEditor: ForwardRefExoticComponent<PresentationEditorProps & RefAttributes<PresentationEditorHandle>>;
+
+/**
+ * Imperative handle exposed via ref on PresentationEditor.
+ * Allows programmatic manipulation from outside the component.
+ */
+export declare interface PresentationEditorHandle {
+    /** Insert a text box with the given content on the current slide */
+    insertTextBox: (text: string) => void;
+}
 
 export declare interface PresentationEditorProps {
     data?: Presentation | null;
