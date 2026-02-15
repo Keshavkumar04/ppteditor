@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle } from 'react'
+import { forwardRef, useImperativeHandle, useRef, useEffect } from 'react'
 import {
   HistoryProvider,
   PresentationProvider,
@@ -44,9 +44,19 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
     const { presentation, addElement, updateElement } = usePresentation()
     const { editorState, textEditingState } = useEditor()
 
-    // Helper: get the currently active text element being edited
-    const getActiveTextElement = (): { slideId: string; element: TextElement } | null => {
-      if (!presentation || !textEditingState.elementId) return null
+    // Track the last text element that was edited — persists across tab switches / blur
+    const lastEditedTextIdRef = useRef<string | null>(null)
+
+    useEffect(() => {
+      if (textEditingState.elementId) {
+        lastEditedTextIdRef.current = textEditingState.elementId
+      }
+    }, [textEditingState.elementId])
+
+    // Helper: get the text element to append to.
+    // Uses active editing state first, falls back to last-edited element.
+    const getTargetTextElement = (): { slideId: string; element: TextElement } | null => {
+      if (!presentation) return null
 
       const slideId = editorState.currentSlideId ?? presentation.slides[0]?.id
       if (!slideId) return null
@@ -54,8 +64,12 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
       const slide = presentation.slides.find(s => s.id === slideId)
       if (!slide) return null
 
+      // Try active editing element first, then fall back to last-edited
+      const targetId = textEditingState.elementId || lastEditedTextIdRef.current
+      if (!targetId) return null
+
       const element = slide.elements.find(
-        el => el.id === textEditingState.elementId && el.type === 'text'
+        el => el.id === targetId && el.type === 'text'
       ) as TextElement | undefined
 
       if (!element) return null
@@ -70,7 +84,7 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
         if (!currentSlideId) return
 
         // If editing a text box, append to it
-        const active = getActiveTextElement()
+        const active = getTargetTextElement()
         if (active) {
           const newParagraph = {
             id: generateId(),
@@ -120,7 +134,7 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
         const content = htmlToTextContent(html)
 
         // If editing a text box, append paragraphs to it
-        const active = getActiveTextElement()
+        const active = getTargetTextElement()
         if (active) {
           const updatedContent = {
             ...active.element.content,
@@ -153,7 +167,7 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
         if (!currentSlideId) return
 
         const elements = htmlToSlideElements(html)
-        const active = getActiveTextElement()
+        const active = getTargetTextElement()
 
         for (const element of elements) {
           if (active && element.type === 'text') {
