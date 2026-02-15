@@ -284,8 +284,16 @@ export declare const PresentationEditor: ForwardRefExoticComponent<PresentationE
  * Allows programmatic manipulation from outside the component.
  */
 export declare interface PresentationEditorHandle {
-    /** Insert a text box with the given content on the current slide */
+    /** Insert a text box with plain text content on the current slide.
+     *  If a text box is actively being edited, appends to it instead. */
     insertTextBox: (text: string) => void;
+    /** Insert a text box with HTML content (parsed into styled paragraphs/runs).
+     *  If a text box is actively being edited, appends to it instead. */
+    insertHtmlTextBox: (html: string) => void;
+    /** Insert HTML content as proper slide elements (text → TextElement, table → TableElement).
+     *  Text portions are appended to the active text box if one is being edited.
+     *  Tables always create new elements. */
+    insertHtmlContent: (html: string) => void;
 }
 
 export declare interface PresentationEditorProps {

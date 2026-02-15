@@ -11,19 +11,28 @@ import {
 import { EditorLayout } from '@/components/layout'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { PresentationEditorProps } from '@/types/props'
-import type { TextElement } from '@/types/slide'
+import type { TextElement, SlideElement } from '@/types/slide'
 import { cn } from '@/lib/utils'
 import { generateId } from '@/utils'
 import { DEFAULT_TEXT_STYLE, DEFAULT_TEXTBOX_STYLE } from '@/types/slide'
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '@/types/editor'
+import { htmlToTextContent, htmlToSlideElements } from '@/utils/htmlToTextContent'
 
 /**
  * Imperative handle exposed via ref on PresentationEditor.
  * Allows programmatic manipulation from outside the component.
  */
 export interface PresentationEditorHandle {
-  /** Insert a text box with the given content on the current slide */
+  /** Insert a text box with plain text content on the current slide.
+   *  If a text box is actively being edited, appends to it instead. */
   insertTextBox: (text: string) => void
+  /** Insert a text box with HTML content (parsed into styled paragraphs/runs).
+   *  If a text box is actively being edited, appends to it instead. */
+  insertHtmlTextBox: (html: string) => void
+  /** Insert HTML content as proper slide elements (text → TextElement, table → TableElement).
+   *  Text portions are appended to the active text box if one is being edited.
+   *  Tables always create new elements. */
+  insertHtmlContent: (html: string) => void
 }
 
 /**
@@ -32,16 +41,49 @@ export interface PresentationEditorHandle {
  */
 const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: PresentationEditorProps['onExport']; showHeader?: boolean }>(
   function EditorBridge({ onExport, showHeader }, ref) {
-    const { presentation, addElement } = usePresentation()
-    const { editorState } = useEditor()
+    const { presentation, addElement, updateElement } = usePresentation()
+    const { editorState, textEditingState } = useEditor()
+
+    // Helper: get the currently active text element being edited
+    const getActiveTextElement = (): { slideId: string; element: TextElement } | null => {
+      if (!presentation || !textEditingState.elementId) return null
+
+      const slideId = editorState.currentSlideId ?? presentation.slides[0]?.id
+      if (!slideId) return null
+
+      const slide = presentation.slides.find(s => s.id === slideId)
+      if (!slide) return null
+
+      const element = slide.elements.find(
+        el => el.id === textEditingState.elementId && el.type === 'text'
+      ) as TextElement | undefined
+
+      if (!element) return null
+      return { slideId, element }
+    }
 
     useImperativeHandle(ref, () => ({
       insertTextBox(text: string) {
         if (!presentation) return
 
-        // Use the current slide, or fall back to the first slide
         const currentSlideId = editorState.currentSlideId ?? presentation.slides[0]?.id
         if (!currentSlideId) return
+
+        // If editing a text box, append to it
+        const active = getActiveTextElement()
+        if (active) {
+          const newParagraph = {
+            id: generateId(),
+            runs: [{ id: generateId(), text, style: DEFAULT_TEXT_STYLE }],
+            alignment: 'left' as const,
+          }
+          const updatedContent = {
+            ...active.element.content,
+            paragraphs: [...active.element.content.paragraphs, newParagraph],
+          }
+          updateElement(active.slideId, active.element.id, { content: updatedContent } as Partial<SlideElement>)
+          return
+        }
 
         const textElement: TextElement = {
           id: generateId(),
@@ -68,7 +110,72 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
 
         addElement(currentSlideId, textElement)
       },
-    }), [presentation, editorState.currentSlideId, addElement])
+
+      insertHtmlTextBox(html: string) {
+        if (!presentation) return
+
+        const currentSlideId = editorState.currentSlideId ?? presentation.slides[0]?.id
+        if (!currentSlideId) return
+
+        const content = htmlToTextContent(html)
+
+        // If editing a text box, append paragraphs to it
+        const active = getActiveTextElement()
+        if (active) {
+          const updatedContent = {
+            ...active.element.content,
+            paragraphs: [...active.element.content.paragraphs, ...content.paragraphs],
+          }
+          updateElement(active.slideId, active.element.id, { content: updatedContent } as Partial<SlideElement>)
+          return
+        }
+
+        const textElement: TextElement = {
+          id: generateId(),
+          type: 'text',
+          position: {
+            x: Math.round((SLIDE_WIDTH - 400) / 2),
+            y: Math.round((SLIDE_HEIGHT - 200) / 2),
+          },
+          size: { width: 400, height: 200 },
+          zIndex: 0,
+          content,
+          style: DEFAULT_TEXTBOX_STYLE,
+        }
+
+        addElement(currentSlideId, textElement)
+      },
+
+      insertHtmlContent(html: string) {
+        if (!presentation) return
+
+        const currentSlideId = editorState.currentSlideId ?? presentation.slides[0]?.id
+        if (!currentSlideId) return
+
+        const elements = htmlToSlideElements(html)
+        const active = getActiveTextElement()
+
+        for (const element of elements) {
+          if (active && element.type === 'text') {
+            // Append text paragraphs to the active text box
+            const textEl = element as TextElement
+            const updatedContent = {
+              ...active.element.content,
+              paragraphs: [...active.element.content.paragraphs, ...textEl.content.paragraphs],
+            }
+            updateElement(active.slideId, active.element.id, { content: updatedContent } as Partial<SlideElement>)
+            // Update the active reference so subsequent text elements also append
+            active.element = {
+              ...active.element,
+              content: updatedContent,
+            }
+          } else {
+            // Tables or no active text box → create new element
+            addElement(currentSlideId, element)
+          }
+        }
+      },
+    }), [presentation, editorState.currentSlideId, textEditingState.elementId, addElement, updateElement])
 
     return (
       <EditorLayout

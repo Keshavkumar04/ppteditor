@@ -13,6 +13,7 @@ import { importPptx, isPptxFile } from '@/services/pptx'
 import { cn } from '@/lib/utils'
 import { PresentationTheme, TextElement, DEFAULT_TEXT_STYLE, DEFAULT_TEXTBOX_STYLE, SLIDE_WIDTH, SLIDE_HEIGHT } from '@/types'
 import { generateId } from '@/utils'
+import { htmlToSlideElements } from '@/utils/htmlToTextContent'
 
 interface EditorLayoutProps {
   onExport?: (blob: Blob, filename: string) => void
@@ -45,43 +46,64 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
     }
   }, [presentation, createNewPresentation])
 
-  // Read system clipboard and create a text box with the content
-  const handleSystemClipboardPaste = useCallback(async () => {
-    const slideId = editorState.currentSlideId ?? presentation?.slides[0]?.id
-    if (!slideId) return
+  // Listen for native paste events to handle system clipboard → new text box
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement
+      const isInputFocused = target.tagName === 'INPUT' ||
+                            target.tagName === 'TEXTAREA' ||
+                            target.isContentEditable
 
-    try {
-      const text = await navigator.clipboard.readText()
-      if (!text.trim()) return
+      // If user is typing in an input or editing text inside a textbox, let browser handle it
+      if (isInputFocused) return
 
-      const textElement: TextElement = {
-        id: generateId(),
-        type: 'text',
-        position: {
-          x: Math.round((SLIDE_WIDTH - 400) / 2),
-          y: Math.round((SLIDE_HEIGHT - 120) / 2),
-        },
-        size: { width: 400, height: 120 },
-        zIndex: 0,
-        content: {
-          paragraphs: [{
-            id: generateId(),
-            runs: [{
+      // If internal clipboard has copied elements, skip (handled by keydown)
+      if (hasClipboard) return
+
+      const slideId = editorState.currentSlideId ?? presentation?.slides[0]?.id
+      if (!slideId) return
+
+      // Try to get HTML content first, fall back to plain text
+      const htmlData = e.clipboardData?.getData('text/html')
+      const textData = e.clipboardData?.getData('text/plain')
+
+      if (htmlData?.trim()) {
+        const elements = htmlToSlideElements(htmlData)
+        for (const element of elements) {
+          addElement(slideId, element)
+        }
+        e.preventDefault()
+      } else if (textData?.trim()) {
+        const textElement: TextElement = {
+          id: generateId(),
+          type: 'text',
+          position: {
+            x: Math.round((SLIDE_WIDTH - 400) / 2),
+            y: Math.round((SLIDE_HEIGHT - 120) / 2),
+          },
+          size: { width: 400, height: 120 },
+          zIndex: 0,
+          content: {
+            paragraphs: [{
               id: generateId(),
-              text,
-              style: DEFAULT_TEXT_STYLE,
+              runs: [{
+                id: generateId(),
+                text: textData,
+                style: DEFAULT_TEXT_STYLE,
+              }],
+              alignment: 'left',
             }],
-            alignment: 'left',
-          }],
-        },
-        style: DEFAULT_TEXTBOX_STYLE,
+          },
+          style: DEFAULT_TEXTBOX_STYLE,
+        }
+        addElement(slideId, textElement)
+        e.preventDefault()
       }
-
-      addElement(slideId, textElement)
-    } catch {
-      // Clipboard API not available or permission denied — silently ignore
     }
-  }, [editorState.currentSlideId, presentation?.slides, addElement])
+
+    window.addEventListener('paste', handlePaste)
+    return () => window.removeEventListener('paste', handlePaste)
+  }, [editorState.currentSlideId, presentation?.slides, addElement, hasClipboard])
 
   // Global keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -116,14 +138,13 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
       e.preventDefault()
       cut()
     } else if (isMod && e.key === 'v') {
-      e.preventDefault()
       if (hasClipboard) {
         // Internal clipboard has copied elements — paste them
+        e.preventDefault()
         paste()
-      } else {
-        // No internal clipboard — read system clipboard and create a text box
-        handleSystemClipboardPaste()
       }
+      // Otherwise: don't preventDefault — let the native paste event fire
+      // which is handled by the paste event listener above
     } else if (isMod && e.key === 'a') {
       e.preventDefault()
       selectAll()
@@ -131,7 +152,7 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
       e.preventDefault()
       deleteSelected()
     }
-  }, [copy, cut, paste, hasClipboard, handleSystemClipboardPaste, selectAll, deleteSelected, undo, redo, canUndo, canRedo, requestSave])
+  }, [copy, cut, paste, hasClipboard, selectAll, deleteSelected, undo, redo, canUndo, canRedo, requestSave])
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown)
