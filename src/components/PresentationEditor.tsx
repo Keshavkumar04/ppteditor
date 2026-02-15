@@ -17,6 +17,7 @@ import { generateId } from '@/utils'
 import { DEFAULT_TEXT_STYLE, DEFAULT_TEXTBOX_STYLE } from '@/types/slide'
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '@/types/editor'
 import { htmlToTextContent, htmlToSlideElements } from '@/utils/htmlToTextContent'
+import { markdownToSlideElements } from '@/utils/markdownToElements'
 
 /**
  * Imperative handle exposed via ref on PresentationEditor.
@@ -33,6 +34,11 @@ export interface PresentationEditorHandle {
    *  Text portions are appended to the active text box if one is being edited.
    *  Tables always create new elements. */
   insertHtmlContent: (html: string) => void
+  /** Insert markdown content directly (no need for marked/external HTML conversion).
+   *  Parses headings, bold, italic, code, tables, lists natively.
+   *  Text portions are appended to the active/last-edited text box.
+   *  Tables always create new elements. */
+  insertMarkdownContent: (markdown: string) => void
 }
 
 /**
@@ -179,6 +185,34 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
             }
             updateElement(active.slideId, active.element.id, { content: updatedContent } as Partial<SlideElement>)
             // Update the active reference so subsequent text elements also append
+            active.element = {
+              ...active.element,
+              content: updatedContent,
+            }
+          } else {
+            // Tables or no active text box → create new element
+            addElement(currentSlideId, element)
+          }
+        }
+      },
+      insertMarkdownContent(markdown: string) {
+        if (!presentation) return
+
+        const currentSlideId = editorState.currentSlideId ?? presentation.slides[0]?.id
+        if (!currentSlideId) return
+
+        const elements = markdownToSlideElements(markdown)
+        const active = getTargetTextElement()
+
+        for (const element of elements) {
+          if (active && element.type === 'text') {
+            // Append text paragraphs to the active/last-edited text box
+            const textEl = element as TextElement
+            const updatedContent = {
+              ...active.element.content,
+              paragraphs: [...active.element.content.paragraphs, ...textEl.content.paragraphs],
+            }
+            updateElement(active.slideId, active.element.id, { content: updatedContent } as Partial<SlideElement>)
             active.element = {
               ...active.element,
               content: updatedContent,

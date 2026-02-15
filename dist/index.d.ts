@@ -294,6 +294,11 @@ export declare interface PresentationEditorHandle {
      *  Text portions are appended to the active text box if one is being edited.
      *  Tables always create new elements. */
     insertHtmlContent: (html: string) => void;
+    /** Insert markdown content directly (no need for marked/external HTML conversion).
+     *  Parses headings, bold, italic, code, tables, lists natively.
+     *  Text portions are appended to the active/last-edited text box.
+     *  Tables always create new elements. */
+    insertMarkdownContent: (markdown: string) => void;
 }
 
 export declare interface PresentationEditorProps {
