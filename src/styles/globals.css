@@ -71,8 +71,76 @@
   --ring: 212.7 26.8% 83.9%;
 }
 
-.ppt-editor-root * {
+/* Scoped preflight — replaces Tailwind's global base reset, contained to the editor */
+.ppt-editor-root *,
+.ppt-editor-root *::before,
+.ppt-editor-root *::after {
+  box-sizing: border-box;
+  border: 0 solid;
   border-color: hsl(var(--border));
+  margin: 0;
+  padding: 0;
+}
+
+.ppt-editor-root {
+  line-height: 1.5;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Headings should inherit size/weight so Tailwind classes control them */
+.ppt-editor-root h1,
+.ppt-editor-root h2,
+.ppt-editor-root h3,
+.ppt-editor-root h4,
+.ppt-editor-root h5,
+.ppt-editor-root h6 {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* Links inherit color */
+.ppt-editor-root a {
+  color: inherit;
+  text-decoration: inherit;
+}
+
+/* Lists: no bullets by default inside the editor UI */
+.ppt-editor-root ol,
+.ppt-editor-root ul {
+  list-style: none;
+}
+
+/* Buttons/inputs reset */
+.ppt-editor-root button,
+.ppt-editor-root input,
+.ppt-editor-root select,
+.ppt-editor-root textarea {
+  font: inherit;
+  color: inherit;
+  background-color: transparent;
+  border-radius: 0;
+}
+
+/* Images become block so flex/grid layouts work predictably */
+.ppt-editor-root img,
+.ppt-editor-root svg,
+.ppt-editor-root video,
+.ppt-editor-root canvas,
+.ppt-editor-root iframe {
+  display: block;
+}
+
+/* Tables */
+.ppt-editor-root table {
+  text-indent: 0;
+  border-color: inherit;
+  border-collapse: collapse;
+}
+
+/* Hidden attribute */
+.ppt-editor-root [hidden] {
+  display: none !important;
 }
 
 /* Editor-specific styles */
