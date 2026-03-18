@@ -299,6 +299,20 @@ export declare interface PresentationEditorHandle {
      *  Text portions are appended to the active/last-edited text box.
      *  Tables always create new elements. */
     insertMarkdownContent: (markdown: string) => void;
+    /** Get the current presentation data. */
+    getPresentation: () => Presentation | null;
+    /** Get the total number of slides. */
+    getSlideCount: () => number;
+    /** Delete a slide by 1-based index. */
+    deleteSlide: (slideIndex: number) => void;
+    /** Add a new slide after the given 1-based index (0 = at the beginning) and populate it with markdown content. */
+    addSlideWithMarkdown: (afterSlideIndex: number, markdown: string) => void;
+    /** Clear all text and shape elements from a slide (preserves images). */
+    clearSlideTextContent: (slideIndex: number) => void;
+    /** Replace all text content on a slide with new markdown content. */
+    replaceSlideContent: (slideIndex: number, markdown: string) => void;
+    /** Replace a word/phrase in all text elements across all slides. */
+    replaceTextInAllSlides: (find: string, replace: string) => void;
 }
 
 export declare interface PresentationEditorProps {

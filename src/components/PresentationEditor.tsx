@@ -11,6 +11,7 @@ import {
 import { EditorLayout } from '@/components/layout'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { PresentationEditorProps } from '@/types/props'
+import type { Presentation } from '@/types/presentation'
 import type { TextElement, SlideElement } from '@/types/slide'
 import { cn } from '@/lib/utils'
 import { generateId } from '@/utils'
@@ -39,6 +40,22 @@ export interface PresentationEditorHandle {
    *  Text portions are appended to the active/last-edited text box.
    *  Tables always create new elements. */
   insertMarkdownContent: (markdown: string) => void
+
+  // ─── AI Editing Methods ──────────────────────────────────────────────────
+  /** Get the current presentation data. */
+  getPresentation: () => Presentation | null
+  /** Get the total number of slides. */
+  getSlideCount: () => number
+  /** Delete a slide by 1-based index. */
+  deleteSlide: (slideIndex: number) => void
+  /** Add a new slide after the given 1-based index (0 = at the beginning) and populate it with markdown content. */
+  addSlideWithMarkdown: (afterSlideIndex: number, markdown: string) => void
+  /** Clear all text and shape elements from a slide (preserves images). */
+  clearSlideTextContent: (slideIndex: number) => void
+  /** Replace all text content on a slide with new markdown content. */
+  replaceSlideContent: (slideIndex: number, markdown: string) => void
+  /** Replace a word/phrase in all text elements across all slides. */
+  replaceTextInAllSlides: (find: string, replace: string) => void
 }
 
 /**
@@ -47,8 +64,12 @@ export interface PresentationEditorHandle {
  */
 const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: PresentationEditorProps['onExport']; showHeader?: boolean }>(
   function EditorBridge({ onExport, showHeader }, ref) {
-    const { presentation, addElement, updateElement } = usePresentation()
-    const { editorState, textEditingState } = useEditor()
+    const {
+      presentation,
+      addElement, updateElement, deleteElements,
+      addSlide: ctxAddSlide, deleteSlide: ctxDeleteSlide, updateSlide,
+    } = usePresentation()
+    const { editorState, textEditingState, setCurrentSlide } = useEditor()
 
     // Track the last text element that was edited — persists across tab switches / blur
     const lastEditedTextIdRef = useRef<string | null>(null)
@@ -223,7 +244,140 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
           }
         }
       },
-    }), [presentation, editorState.currentSlideId, textEditingState.elementId, addElement, updateElement])
+
+      // ─── AI Editing Methods ────────────────────────────────────────────────
+
+      getPresentation() {
+        return presentation
+      },
+
+      getSlideCount() {
+        return presentation?.slides.length ?? 0
+      },
+
+      deleteSlide(slideIndex: number) {
+        if (!presentation) return
+        const slide = presentation.slides[slideIndex - 1]
+        if (!slide) return
+        ctxDeleteSlide(slide.id)
+      },
+
+      addSlideWithMarkdown(afterSlideIndex: number, markdown: string) {
+        if (!presentation) return
+
+        // Determine which slide to insert after
+        const afterSlideId = afterSlideIndex > 0
+          ? presentation.slides[afterSlideIndex - 1]?.id
+          : undefined
+
+        // Create the new slide
+        const newSlide = ctxAddSlide(afterSlideId)
+
+        // Navigate to the new slide
+        setCurrentSlide(newSlide.id)
+
+        // Clear the lastEditedTextIdRef so insertMarkdownContent creates fresh elements
+        lastEditedTextIdRef.current = null
+
+        // Parse markdown into elements and add them to the new slide
+        const elements = markdownToSlideElements(markdown)
+        for (const element of elements) {
+          addElement(newSlide.id, element)
+        }
+      },
+
+      clearSlideTextContent(slideIndex: number) {
+        if (!presentation) return
+        const slide = presentation.slides[slideIndex - 1]
+        if (!slide) return
+
+        // Find all text and shape elements (preserve images, tables, groups)
+        const textElementIds = slide.elements
+          .filter((el: SlideElement) => el.type === 'text' || el.type === 'shape')
+          .map((el: SlideElement) => el.id)
+
+        if (textElementIds.length > 0) {
+          deleteElements(slide.id, textElementIds)
+        }
+      },
+
+      replaceSlideContent(slideIndex: number, markdown: string) {
+        if (!presentation) return
+        const slide = presentation.slides[slideIndex - 1]
+        if (!slide) return
+
+        // Remove all text/shape elements from the slide
+        const textElementIds = slide.elements
+          .filter((el: SlideElement) => el.type === 'text' || el.type === 'shape')
+          .map((el: SlideElement) => el.id)
+
+        if (textElementIds.length > 0) {
+          deleteElements(slide.id, textElementIds)
+        }
+
+        // Navigate to this slide and clear ref so new elements are created fresh
+        setCurrentSlide(slide.id)
+        lastEditedTextIdRef.current = null
+
+        // Parse markdown and add new elements
+        const elements = markdownToSlideElements(markdown)
+        for (const element of elements) {
+          addElement(slide.id, element)
+        }
+      },
+
+      replaceTextInAllSlides(find: string, replace: string) {
+        if (!presentation) return
+
+        for (const slide of presentation.slides) {
+          for (const element of slide.elements) {
+            // Handle text elements
+            if (element.type === 'text') {
+              const textEl = element as TextElement
+              let changed = false
+              const newParagraphs = textEl.content.paragraphs.map(para => ({
+                ...para,
+                runs: para.runs.map(run => {
+                  if (run.text && run.text.includes(find)) {
+                    changed = true
+                    return { ...run, text: run.text.split(find).join(replace) }
+                  }
+                  return run
+                }),
+              }))
+              if (changed) {
+                updateElement(slide.id, element.id, {
+                  content: { ...textEl.content, paragraphs: newParagraphs },
+                } as Partial<SlideElement>)
+              }
+            }
+
+            // Handle shape elements with text
+            if (element.type === 'shape' && (element as any).text) {
+              const shapeEl = element as any
+              let changed = false
+              const newParagraphs = shapeEl.text.paragraphs.map((para: any) => ({
+                ...para,
+                runs: para.runs.map((run: any) => {
+                  if (run.text && run.text.includes(find)) {
+                    changed = true
+                    return { ...run, text: run.text.split(find).join(replace) }
+                  }
+                  return run
+                }),
+              }))
+              if (changed) {
+                updateElement(slide.id, element.id, {
+                  text: { ...shapeEl.text, paragraphs: newParagraphs },
+                } as Partial<SlideElement>)
+              }
+            }
+          }
+        }
+      },
+    }), [presentation, editorState.currentSlideId, textEditingState.elementId,
+         addElement, updateElement, deleteElements,
+         ctxAddSlide, ctxDeleteSlide, updateSlide, setCurrentSlide])
 
     return (
       <EditorLayout
