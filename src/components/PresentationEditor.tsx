@@ -270,20 +270,15 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
           ? presentation.slides[afterSlideIndex - 1]?.id
           : undefined
 
-        // Create the new slide
-        const newSlide = ctxAddSlide(afterSlideId)
+        // Parse markdown into elements first
+        const elements = markdownToSlideElements(markdown)
+
+        // Create the new slide with elements in one atomic operation
+        const newSlide = ctxAddSlide(afterSlideId, elements)
 
         // Navigate to the new slide
         setCurrentSlide(newSlide.id)
-
-        // Clear the lastEditedTextIdRef so insertMarkdownContent creates fresh elements
         lastEditedTextIdRef.current = null
-
-        // Parse markdown into elements and add them to the new slide
-        const elements = markdownToSlideElements(markdown)
-        for (const element of elements) {
-          addElement(newSlide.id, element)
-        }
       },
 
       clearSlideTextContent(slideIndex: number) {
@@ -306,24 +301,24 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
         const slide = presentation.slides[slideIndex - 1]
         if (!slide) return
 
-        // Remove all text/shape elements from the slide
-        const textElementIds = slide.elements
-          .filter((el: SlideElement) => el.type === 'text' || el.type === 'shape')
-          .map((el: SlideElement) => el.id)
+        // Keep non-text elements (images, tables, groups)
+        const keepElements = slide.elements
+          .filter((el: SlideElement) => el.type !== 'text' && el.type !== 'shape')
 
-        if (textElementIds.length > 0) {
-          deleteElements(slide.id, textElementIds)
-        }
+        // Parse markdown into new elements
+        const newElements = markdownToSlideElements(markdown)
 
-        // Navigate to this slide and clear ref so new elements are created fresh
+        // Assign zIndex values after existing elements
+        let maxZ = keepElements.length > 0
+          ? Math.max(...keepElements.map((el: SlideElement) => el.zIndex))
+          : 0
+        const indexedNewElements = newElements.map((el: SlideElement) => ({ ...el, zIndex: ++maxZ }))
+
+        // Single atomic update: replace all elements at once
+        updateSlide(slide.id, { elements: [...keepElements, ...indexedNewElements] })
+
         setCurrentSlide(slide.id)
         lastEditedTextIdRef.current = null
-
-        // Parse markdown and add new elements
-        const elements = markdownToSlideElements(markdown)
-        for (const element of elements) {
-          addElement(slide.id, element)
-        }
       },
 
       replaceTextInAllSlides(find: string, replace: string) {
