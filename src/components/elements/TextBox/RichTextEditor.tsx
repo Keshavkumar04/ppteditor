@@ -186,7 +186,30 @@ function contentToHtml(content: TextContent): string {
     if (paragraph.spaceBefore) pStyles.push(`margin-top: ${paragraph.spaceBefore}px`)
     if (paragraph.spaceAfter) pStyles.push(`margin-bottom: ${paragraph.spaceAfter}px`)
 
-    return `<p data-paragraph-index="${pIndex}" style="${pStyles.join('; ')}">${runsHtml || '\u200B'}</p>`
+    // Add bullet/number prefix and indent for list items
+    let bulletPrefix = ''
+    if (paragraph.bulletType === 'bullet' || paragraph.bulletType === 'number') {
+      const indent = 20 + (paragraph.indentLevel || 0) * 20
+      pStyles.push(`padding-left: ${indent}px`)
+      if (paragraph.bulletType === 'bullet') {
+        const char = paragraph.bulletChar || '•'
+        bulletPrefix = `<span style="margin-right: 6px">${char}</span>`
+      } else {
+        // Calculate number
+        let num = 1
+        for (let pi = pIndex - 1; pi >= 0; pi--) {
+          const prev = content.paragraphs[pi]
+          if (prev.bulletType === 'number' && (prev.indentLevel || 0) === (paragraph.indentLevel || 0)) {
+            num++
+          } else if (prev.bulletType !== 'number') {
+            break
+          }
+        }
+        bulletPrefix = `<span style="margin-right: 6px">${num}.</span>`
+      }
+    }
+
+    return `<p data-paragraph-index="${pIndex}" style="${pStyles.join('; ')}">${bulletPrefix}${runsHtml || '\u200B'}</p>`
   }).join('')
 }
 

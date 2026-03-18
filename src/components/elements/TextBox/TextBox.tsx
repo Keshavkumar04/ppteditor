@@ -142,6 +142,31 @@ export function TextBox({
             // Check if paragraph is empty or only contains whitespace/newlines
             const isEmpty = paragraph.runs.every(run => !run.text || run.text.trim() === '' || run.text === '\n')
 
+            // Track numbering for ordered lists
+            const bulletType = paragraph.bulletType
+            const indentLevel = paragraph.indentLevel || 0
+            const indentPx = bulletType ? 20 + indentLevel * 20 : 0
+
+            // Calculate number index for ordered lists
+            let numberIndex = 1
+            if (bulletType === 'number') {
+              numberIndex = 1
+              for (let pi = pIndex - 1; pi >= 0; pi--) {
+                const prev = content.paragraphs[pi]
+                if (prev.bulletType === 'number' && (prev.indentLevel || 0) === indentLevel) {
+                  numberIndex++
+                } else if (prev.bulletType !== 'number') {
+                  break
+                }
+              }
+            }
+
+            const bulletChar = bulletType === 'bullet'
+              ? (paragraph.bulletChar || '•')
+              : bulletType === 'number'
+                ? `${numberIndex}.`
+                : null
+
             return (
               <p
                 key={paragraph.id || pIndex}
@@ -153,6 +178,7 @@ export function TextBox({
                   lineHeight: paragraph.lineSpacing ? `${paragraph.lineSpacing}%` : 'normal',
                   whiteSpace: 'pre-wrap',
                   minHeight: isEmpty ? '1em' : undefined,
+                  paddingLeft: indentPx || undefined,
                 }}
               >
                 {isEmpty ? (
@@ -164,23 +190,35 @@ export function TextBox({
                     {'\u00A0'}
                   </span>
                 ) : (
-                  paragraph.runs.map((run, rIndex) => (
-                    <span
-                      key={run.id || rIndex}
-                      style={{
-                        fontFamily: run.style.fontFamily,
-                        fontSize: run.style.fontSize,
-                        fontWeight: run.style.fontWeight,
-                        fontStyle: run.style.fontStyle,
-                        textDecoration: run.style.textDecoration,
-                        color: run.style.color,
-                        backgroundColor: run.style.backgroundColor,
-                        letterSpacing: run.style.letterSpacing,
-                      }}
-                    >
-                      {run.text}
-                    </span>
-                  ))
+                  <>
+                    {bulletChar && (
+                      <span style={{
+                        fontFamily: paragraph.runs[0]?.style.fontFamily,
+                        fontSize: paragraph.runs[0]?.style.fontSize,
+                        color: paragraph.runs[0]?.style.color,
+                        marginRight: 6,
+                      }}>
+                        {bulletChar}
+                      </span>
+                    )}
+                    {paragraph.runs.map((run, rIndex) => (
+                      <span
+                        key={run.id || rIndex}
+                        style={{
+                          fontFamily: run.style.fontFamily,
+                          fontSize: run.style.fontSize,
+                          fontWeight: run.style.fontWeight,
+                          fontStyle: run.style.fontStyle,
+                          textDecoration: run.style.textDecoration,
+                          color: run.style.color,
+                          backgroundColor: run.style.backgroundColor,
+                          letterSpacing: run.style.letterSpacing,
+                        }}
+                      >
+                        {run.text}
+                      </span>
+                    ))}
+                  </>
                 )}
               </p>
             )
