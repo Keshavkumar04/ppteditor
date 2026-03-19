@@ -12,7 +12,8 @@ import { EditorLayout } from '@/components/layout'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { PresentationEditorProps } from '@/types/props'
 import type { Presentation } from '@/types/presentation'
-import type { TextElement, SlideElement } from '@/types/slide'
+import type { TextElement, SlideElement, Slide } from '@/types/slide'
+import { DEFAULT_BACKGROUND } from '@/types/slide'
 import { cn } from '@/lib/utils'
 import { generateId } from '@/utils'
 import { DEFAULT_TEXT_STYLE, DEFAULT_TEXTBOX_STYLE } from '@/types/slide'
@@ -24,6 +25,13 @@ import { markdownToSlideElements } from '@/utils/markdownToElements'
  * Imperative handle exposed via ref on PresentationEditor.
  * Allows programmatic manipulation from outside the component.
  */
+export interface PresentationEditInstruction {
+  type: 'rewrite_slide' | 'delete_slide' | 'add_slide' | 'replace_all'
+  slideIndex?: number
+  find?: string
+  content?: string
+}
+
 export interface PresentationEditorHandle {
   /** Insert a text box with plain text content on the current slide.
    *  If a text box is actively being edited, appends to it instead. */
@@ -56,6 +64,9 @@ export interface PresentationEditorHandle {
   replaceSlideContent: (slideIndex: number, markdown: string) => void
   /** Replace a word/phrase in all text elements across all slides. */
   replaceTextInAllSlides: (find: string, replace: string) => void
+  /** Apply multiple edit instructions atomically in a single state update.
+   *  This avoids race conditions when applying multiple operations. */
+  batchApplyEdits: (edits: PresentationEditInstruction[]) => void
 }
 
 /**
@@ -68,6 +79,7 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
       presentation,
       addElement, updateElement, deleteElements,
       addSlide: ctxAddSlide, deleteSlide: ctxDeleteSlide, updateSlide,
+      loadPresentation,
     } = usePresentation()
     const { editorState, textEditingState, setCurrentSlide } = useEditor()
 
@@ -370,9 +382,102 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
           }
         }
       },
+
+      batchApplyEdits(edits: PresentationEditInstruction[]) {
+        if (!presentation) return
+
+        // Deep clone the presentation so we can mutate it freely
+        const pres: Presentation = JSON.parse(JSON.stringify(presentation))
+
+        // Process deletes first (in reverse order to keep indices stable)
+        const deleteEdits = edits
+          .filter(e => e.type === 'delete_slide' && e.slideIndex !== undefined)
+          .sort((a, b) => (b.slideIndex ?? 0) - (a.slideIndex ?? 0))
+
+        for (const edit of deleteEdits) {
+          const idx = (edit.slideIndex ?? 0) - 1
+          if (idx >= 0 && idx < pres.slides.length) {
+            pres.slides.splice(idx, 1)
+          }
+        }
+
+        // Process rewrites (update slide content in place)
+        const rewriteEdits = edits.filter(e => e.type === 'rewrite_slide')
+        for (const edit of rewriteEdits) {
+          const idx = (edit.slideIndex ?? 0) - 1
+          const slide = pres.slides[idx]
+          if (!slide || !edit.content) continue
+
+          // Keep non-text elements (images, tables, groups)
+          const keepElements = slide.elements.filter(
+            (el: SlideElement) => el.type !== 'text' && el.type !== 'shape'
+          )
+          const newElements = markdownToSlideElements(edit.content)
+          let maxZ = keepElements.length > 0
+            ? Math.max(...keepElements.map((el: SlideElement) => el.zIndex))
+            : 0
+          const indexed = newElements.map((el: SlideElement) => ({ ...el, zIndex: ++maxZ }))
+          slide.elements = [...keepElements, ...indexed]
+        }
+
+        // Process replace_all (text find/replace across all slides)
+        const replaceAllEdits = edits.filter(e => e.type === 'replace_all')
+        for (const edit of replaceAllEdits) {
+          if (!edit.find || !edit.content) continue
+          for (const slide of pres.slides) {
+            for (const element of slide.elements) {
+              if (element.type === 'text') {
+                const textEl = element as TextElement
+                for (const para of textEl.content.paragraphs) {
+                  for (const run of para.runs) {
+                    if (run.text && run.text.includes(edit.find!)) {
+                      run.text = run.text.split(edit.find!).join(edit.content)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // Process add_slide edits (in order, adjusting indices as we insert)
+        const addEdits = edits.filter(e => e.type === 'add_slide')
+        // Sort by slideIndex ascending so earlier inserts shift later ones correctly
+        addEdits.sort((a, b) => (a.slideIndex ?? 0) - (b.slideIndex ?? 0))
+        let insertionOffset = 0
+        for (const edit of addEdits) {
+          const afterIdx = (edit.slideIndex ?? 0) + insertionOffset
+          const insertAt = Math.min(afterIdx, pres.slides.length)
+
+          const newSlide: Slide = {
+            id: generateId(),
+            order: insertAt,
+            elements: edit.content ? markdownToSlideElements(edit.content) : [],
+            background: { ...DEFAULT_BACKGROUND },
+          }
+
+          pres.slides.splice(insertAt, 0, newSlide)
+          insertionOffset++
+        }
+
+        // Reorder all slides
+        pres.slides.forEach((slide: Slide, i: number) => { slide.order = i })
+        pres.updatedAt = new Date()
+
+        // Single atomic state update
+        loadPresentation(pres)
+
+        // Navigate to the last added slide if any were added
+        if (addEdits.length > 0) {
+          const lastAdded = pres.slides[pres.slides.length - 1]
+          if (lastAdded) setCurrentSlide(lastAdded.id)
+        }
+
+        lastEditedTextIdRef.current = null
+      },
     }), [presentation, editorState.currentSlideId, textEditingState.elementId,
          addElement, updateElement, deleteElements,
-         ctxAddSlide, ctxDeleteSlide, updateSlide, setCurrentSlide])
+         ctxAddSlide, ctxDeleteSlide, updateSlide, setCurrentSlide, loadPresentation])
 
     return (
       <EditorLayout

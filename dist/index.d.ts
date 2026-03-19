@@ -277,12 +277,19 @@ export declare interface Presentation {
     metadata: PresentationMetadata;
 }
 
-export declare const PresentationEditor: ForwardRefExoticComponent<PresentationEditorProps & RefAttributes<PresentationEditorHandle>>;
-
 /**
  * Imperative handle exposed via ref on PresentationEditor.
  * Allows programmatic manipulation from outside the component.
  */
+declare interface PresentationEditInstruction {
+    type: 'rewrite_slide' | 'delete_slide' | 'add_slide' | 'replace_all';
+    slideIndex?: number;
+    find?: string;
+    content?: string;
+}
+
+export declare const PresentationEditor: ForwardRefExoticComponent<PresentationEditorProps & RefAttributes<PresentationEditorHandle>>;
+
 export declare interface PresentationEditorHandle {
     /** Insert a text box with plain text content on the current slide.
      *  If a text box is actively being edited, appends to it instead. */
@@ -313,6 +320,9 @@ export declare interface PresentationEditorHandle {
     replaceSlideContent: (slideIndex: number, markdown: string) => void;
     /** Replace a word/phrase in all text elements across all slides. */
     replaceTextInAllSlides: (find: string, replace: string) => void;
+    /** Apply multiple edit instructions atomically in a single state update.
+     *  This avoids race conditions when applying multiple operations. */
+    batchApplyEdits: (edits: PresentationEditInstruction[]) => void;
 }
 
 export declare interface PresentationEditorProps {
