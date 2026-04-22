@@ -323,6 +323,8 @@ export declare interface PresentationEditorHandle {
     /** Apply multiple edit instructions atomically in a single state update.
      *  This avoids race conditions when applying multiple operations. */
     batchApplyEdits: (edits: PresentationEditInstruction[]) => void;
+    /** Returns the id of the currently selected slide, or null if none. */
+    getCurrentSlideId: () => string | null;
 }
 
 export declare interface PresentationEditorProps {
@@ -345,6 +347,8 @@ export declare interface PresentationEditorProps {
     initialZoom?: number;
     maxHistorySize?: number;
     readOnly?: boolean;
+    slideCommentCounts?: Record<string, number>;
+    onSlideCommentBadgeClick?: (slideId: string) => void;
     className?: string;
     style?: React.CSSProperties;
 }
