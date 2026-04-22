@@ -5,6 +5,7 @@ import {
   EditorProvider,
   SelectionProvider,
   ThemeProvider,
+  CommentsProvider,
   usePresentation,
   useEditor,
 } from '@/context'
@@ -67,6 +68,8 @@ export interface PresentationEditorHandle {
   /** Apply multiple edit instructions atomically in a single state update.
    *  This avoids race conditions when applying multiple operations. */
   batchApplyEdits: (edits: PresentationEditInstruction[]) => void
+  /** Returns the id of the currently selected slide, or null if none. */
+  getCurrentSlideId: () => string | null
 }
 
 /**
@@ -475,6 +478,11 @@ const EditorBridge = forwardRef<PresentationEditorHandle, { onExport?: Presentat
 
         lastEditedTextIdRef.current = null
       },
+
+      getCurrentSlideId: () => {
+        if (!presentation) return null
+        return editorState.currentSlideId ?? presentation.slides[0]?.id ?? null
+      },
     }), [presentation, editorState.currentSlideId, textEditingState.elementId,
          addElement, updateElement, deleteElements,
          ctxAddSlide, ctxDeleteSlide, updateSlide, setCurrentSlide, loadPresentation])
@@ -502,6 +510,8 @@ export const PresentationEditor = forwardRef<PresentationEditorHandle, Presentat
       onThemeChange,
       initialZoom,
       maxHistorySize = 50,
+      slideCommentCounts,
+      onSlideCommentBadgeClick,
       className,
       style,
     } = props
@@ -528,11 +538,16 @@ export const PresentationEditor = forwardRef<PresentationEditorHandle, Presentat
               >
                 <EditorProvider panels={panelVisibility} initialZoom={initialZoom}>
                   <SelectionProvider>
-                    <EditorBridge
-                      ref={ref}
-                      onExport={onExport}
-                      showHeader={panels?.header}
-                    />
+                    <CommentsProvider
+                      slideCommentCounts={slideCommentCounts}
+                      onSlideCommentBadgeClick={onSlideCommentBadgeClick}
+                    >
+                      <EditorBridge
+                        ref={ref}
+                        onExport={onExport}
+                        showHeader={panels?.header}
+                      />
+                    </CommentsProvider>
                   </SelectionProvider>
                 </EditorProvider>
               </PresentationProvider>

@@ -27,6 +27,11 @@ export interface PresentationEditorProps {
   maxHistorySize?: number
   readOnly?: boolean
 
+  // Comments integration — host app owns the thread UI; the library only
+  // renders the unresolved-count badge on each slide thumbnail.
+  slideCommentCounts?: Record<string, number>
+  onSlideCommentBadgeClick?: (slideId: string) => void
+
   // Container
   className?: string
   style?: React.CSSProperties

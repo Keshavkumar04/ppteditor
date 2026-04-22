@@ -9,8 +9,9 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu'
-import { Copy, Trash2, EyeOff, Eye } from 'lucide-react'
+import { Copy, Trash2, EyeOff, Eye, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useComments } from '@/context'
 
 interface SlideThumbnailProps {
   slide: Slide
@@ -31,6 +32,9 @@ export const SlideThumbnail = memo(function SlideThumbnail({
   onDelete,
   onToggleHidden,
 }: SlideThumbnailProps) {
+  const { slideCommentCounts, onSlideCommentBadgeClick } = useComments()
+  const commentCount = slideCommentCounts[slide.id] ?? 0
+
   const {
     attributes,
     listeners,
@@ -122,6 +126,23 @@ export const SlideThumbnail = memo(function SlideThumbnail({
               </div>
             )}
           </div>
+
+          {/* Comment count badge */}
+          {commentCount > 0 && (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation()
+                onSlideCommentBadgeClick?.(slide.id)
+              }}
+              title={`${commentCount} comment${commentCount === 1 ? '' : 's'}`}
+              className="absolute -top-1.5 -right-1.5 flex items-center gap-0.5 px-1.5 h-5 rounded-full bg-yellow-400 hover:bg-yellow-500 text-gray-900 text-[10px] font-semibold shadow border border-yellow-600/40 z-10"
+            >
+              <MessageSquare className="h-3 w-3" />
+              {commentCount}
+            </button>
+          )}
         </div>
       </ContextMenuTrigger>
 
