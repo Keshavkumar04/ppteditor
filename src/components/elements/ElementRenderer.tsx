@@ -4,6 +4,7 @@ import { ElementWrapper } from './ElementWrapper'
 import { TextBox } from './TextBox'
 import { Shape } from './Shape'
 import { Table } from './Table'
+import { useReadOnly } from '@/context'
 
 interface ElementRendererProps {
   element: SlideElement
@@ -12,13 +13,15 @@ interface ElementRendererProps {
 }
 
 export const ElementRenderer = memo(function ElementRenderer({ element, slideId, isSelected }: ElementRendererProps) {
+  const readOnly = useReadOnly()
   const [isEditing, setIsEditing] = useState(false)
 
   const handleDoubleClick = useCallback(() => {
+    if (readOnly) return
     if (element.type === 'text' || element.type === 'table') {
       setIsEditing(true)
     }
-  }, [element.type])
+  }, [element.type, readOnly])
 
   const handleStopEditing = useCallback(() => {
     setIsEditing(false)

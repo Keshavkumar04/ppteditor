@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { SlideElement, ResizeHandle } from '@/types'
-import { useSelection, usePresentation } from '@/context'
+import { useSelection, usePresentation, useReadOnly } from '@/context'
 
 interface ElementWrapperProps {
   element: SlideElement
@@ -34,6 +34,7 @@ export function ElementWrapper({
 }: ElementWrapperProps) {
   const { selectElement, startDrag, endDrag, startResize, endResize } = useSelection()
   const { updateElement } = usePresentation()
+  const readOnly = useReadOnly()
   const [isDragging, setIsDragging] = useState(false)
   const [isResizing, setIsResizing] = useState(false)
   const [activeHandle, setActiveHandle] = useState<ResizeHandle | null>(null)
@@ -51,14 +52,15 @@ export function ElementWrapper({
 
   // Handle selection click
   const handleClick = useCallback((e: React.MouseEvent) => {
+    if (readOnly) return
     e.stopPropagation()
     selectElement(element.id, e.shiftKey)
-  }, [element.id, selectElement])
+  }, [element.id, selectElement, readOnly])
 
   // Handle drag start
   const handleDragStart = useCallback((e: React.MouseEvent) => {
     // Don't start drag when editing (allows text selection)
-    if (element.locked || isEditing) return
+    if (readOnly || element.locked || isEditing) return
     e.stopPropagation()
     e.preventDefault()
 
@@ -74,11 +76,11 @@ export function ElementWrapper({
       elementX: position.x,
       elementY: position.y,
     }
-  }, [element.id, element.locked, isEditing, isSelected, position, selectElement, startDrag])
+  }, [element.id, element.locked, isEditing, isSelected, position, selectElement, startDrag, readOnly])
 
   // Handle resize start
   const handleResizeStart = useCallback((e: React.MouseEvent, handle: ResizeHandle) => {
-    if (element.locked) return
+    if (readOnly || element.locked) return
     e.stopPropagation()
     e.preventDefault()
 
@@ -250,7 +252,7 @@ export function ElementWrapper({
           />
 
           {/* Resize handles */}
-          {!element.locked && resizeHandles.map(({ id, cursor }) => {
+          {!readOnly && !element.locked && resizeHandles.map(({ id, cursor }) => {
             const pos = getHandlePosition(id)
             return (
               <rect

@@ -7,7 +7,7 @@ import { FormattingToolbar } from '@/components/toolbar/FormattingToolbar'
 import { PropertiesPanel } from '@/components/properties/PropertiesPanel'
 import { ThemePickerDialog } from '@/components/dialogs/ThemePickerDialog'
 import { ThemeEditorDialog } from '@/components/dialogs/ThemeEditorDialog'
-import { useEditor, usePresentation, useSelection, useHistory } from '@/context'
+import { useEditor, usePresentation, useSelection, useHistory, useReadOnly } from '@/context'
 import { exportPptx, downloadPptx } from '@/services/pptx'
 import { importPptx, isPptxFile } from '@/services/pptx'
 import { cn } from '@/lib/utils'
@@ -21,6 +21,7 @@ interface EditorLayoutProps {
 }
 
 export function EditorLayout({ onExport }: EditorLayoutProps) {
+  const readOnly = useReadOnly()
   const { editorState } = useEditor()
   const {
     presentation,
@@ -48,6 +49,7 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
 
   // Listen for native paste events to handle system clipboard → new text box
   useEffect(() => {
+    if (readOnly) return
     const handlePaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement
       const isInputFocused = target.tagName === 'INPUT' ||
@@ -103,10 +105,11 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
 
     window.addEventListener('paste', handlePaste)
     return () => window.removeEventListener('paste', handlePaste)
-  }, [editorState.currentSlideId, presentation?.slides, addElement, hasClipboard])
+  }, [editorState.currentSlideId, presentation?.slides, addElement, hasClipboard, readOnly])
 
   // Global keyboard shortcuts
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (readOnly) return
     const isMod = e.ctrlKey || e.metaKey
     const target = e.target as HTMLElement
     const isInputFocused = target.tagName === 'INPUT' ||
@@ -152,7 +155,7 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
       e.preventDefault()
       deleteSelected()
     }
-  }, [copy, cut, paste, hasClipboard, selectAll, deleteSelected, undo, redo, canUndo, canRedo, requestSave])
+  }, [copy, cut, paste, hasClipboard, selectAll, deleteSelected, undo, redo, canUndo, canRedo, requestSave, readOnly])
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown)
@@ -245,15 +248,17 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
       />
 
       {/* Main Toolbar (includes File, Edit, Theme, Undo/Redo + insert tools) */}
-      <MainToolbar
-        className="h-8 flex-shrink-0 border-b"
-        onImport={handleImport}
-        onExport={handleExport}
-        onTheme={handleTheme}
-      />
+      {!readOnly && (
+        <MainToolbar
+          className="h-8 flex-shrink-0 border-b"
+          onImport={handleImport}
+          onExport={handleExport}
+          onTheme={handleTheme}
+        />
+      )}
 
       {/* Formatting Toolbar (shows when text element selected) */}
-      <FormattingToolbar className="h-8 flex-shrink-0" />
+      {!readOnly && <FormattingToolbar className="h-8 flex-shrink-0" />}
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
@@ -268,26 +273,30 @@ export function EditorLayout({ onExport }: EditorLayoutProps) {
         <div className="flex-1 overflow-hidden relative">
           <SlideCanvas />
           {/* Toggle right panel button */}
-          <button
-            onClick={() => setRightPanelOpen(prev => !prev)}
-            className="absolute top-2 right-2 z-10 p-1 rounded bg-background/80 border shadow-sm hover:bg-background transition-colors"
-            title={rightPanelOpen ? 'Hide Properties' : 'Show Properties'}
-          >
-            {rightPanelOpen ? (
-              <PanelRightClose className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <PanelRightOpen className="h-4 w-4 text-muted-foreground" />
-            )}
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => setRightPanelOpen(prev => !prev)}
+              className="absolute top-2 right-2 z-10 p-1 rounded bg-background/80 border shadow-sm hover:bg-background transition-colors"
+              title={rightPanelOpen ? 'Hide Properties' : 'Show Properties'}
+            >
+              {rightPanelOpen ? (
+                <PanelRightClose className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <PanelRightOpen className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
+          )}
         </div>
 
         {/* Right Sidebar - Properties Panel (collapsible) */}
-        <div className={cn(
-          'flex-shrink-0 border-l bg-background overflow-hidden transition-all duration-200',
-          rightPanelOpen ? 'w-56' : 'w-0 border-l-0'
-        )}>
-          {rightPanelOpen && <PropertiesPanel />}
-        </div>
+        {!readOnly && (
+          <div className={cn(
+            'flex-shrink-0 border-l bg-background overflow-hidden transition-all duration-200',
+            rightPanelOpen ? 'w-56' : 'w-0 border-l-0'
+          )}>
+            {rightPanelOpen && <PropertiesPanel />}
+          </div>
+        )}
       </div>
 
       {/* Status Bar */}

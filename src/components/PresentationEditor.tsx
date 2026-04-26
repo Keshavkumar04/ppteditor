@@ -6,6 +6,7 @@ import {
   SelectionProvider,
   ThemeProvider,
   CommentsProvider,
+  ReadOnlyProvider,
   usePresentation,
   useEditor,
 } from '@/context'
@@ -510,6 +511,7 @@ export const PresentationEditor = forwardRef<PresentationEditorHandle, Presentat
       onThemeChange,
       initialZoom,
       maxHistorySize = 50,
+      readOnly,
       slideCommentCounts,
       onSlideCommentBadgeClick,
       className,
@@ -538,16 +540,18 @@ export const PresentationEditor = forwardRef<PresentationEditorHandle, Presentat
               >
                 <EditorProvider panels={panelVisibility} initialZoom={initialZoom}>
                   <SelectionProvider>
-                    <CommentsProvider
-                      slideCommentCounts={slideCommentCounts}
-                      onSlideCommentBadgeClick={onSlideCommentBadgeClick}
-                    >
-                      <EditorBridge
-                        ref={ref}
-                        onExport={onExport}
-                        showHeader={panels?.header}
-                      />
-                    </CommentsProvider>
+                    <ReadOnlyProvider readOnly={readOnly}>
+                      <CommentsProvider
+                        slideCommentCounts={slideCommentCounts}
+                        onSlideCommentBadgeClick={onSlideCommentBadgeClick}
+                      >
+                        <EditorBridge
+                          ref={ref}
+                          onExport={onExport}
+                          showHeader={panels?.header}
+                        />
+                      </CommentsProvider>
+                    </ReadOnlyProvider>
                   </SelectionProvider>
                 </EditorProvider>
               </PresentationProvider>

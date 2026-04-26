@@ -15,7 +15,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { SlideThumbnail } from './SlideThumbnail'
 import { SlideLayoutPicker } from './SlideLayoutPicker'
-import { usePresentation, useEditor, useSelection } from '@/context'
+import { usePresentation, useEditor, useSelection, useReadOnly } from '@/context'
 import { SlideElement } from '@/types'
 
 export function SlidePanel() {
@@ -29,6 +29,7 @@ export function SlidePanel() {
   } = usePresentation()
   const { editorState, setCurrentSlide } = useEditor()
   const { deselectAll } = useSelection()
+  const readOnly = useReadOnly()
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -97,7 +98,9 @@ export function SlidePanel() {
       {/* Header */}
       <div className="flex items-center justify-between px-2 py-1.5 border-b">
         <span className="text-xs font-medium">Slides</span>
-        <SlideLayoutPicker onSelectLayout={(elements) => handleAddSlide(elements)} />
+        {!readOnly && (
+          <SlideLayoutPicker onSelectLayout={(elements) => handleAddSlide(elements)} />
+        )}
       </div>
 
       {/* Slide List */}
@@ -106,7 +109,7 @@ export function SlidePanel() {
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
+            onDragEnd={readOnly ? undefined : handleDragEnd}
           >
             <SortableContext
               items={presentation.slides.map(s => s.id)}
@@ -122,7 +125,9 @@ export function SlidePanel() {
                     onSelect={() => handleSelectSlide(slide.id)}
                     onDuplicate={() => handleDuplicateSlide(slide.id)}
                     onDelete={() => handleDeleteSlide(slide.id)}
-                    onToggleHidden={() => handleToggleHidden(slide.id)}
+                    onToggleHidden={
+                      readOnly ? undefined : () => handleToggleHidden(slide.id)
+                    }
                   />
                 ))}
               </div>

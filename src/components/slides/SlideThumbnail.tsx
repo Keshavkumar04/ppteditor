@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/context-menu'
 import { Copy, Trash2, EyeOff, Eye, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useComments } from '@/context'
+import { useComments, useReadOnly } from '@/context'
 
 interface SlideThumbnailProps {
   slide: Slide
@@ -34,6 +34,7 @@ export const SlideThumbnail = memo(function SlideThumbnail({
 }: SlideThumbnailProps) {
   const { slideCommentCounts, onSlideCommentBadgeClick } = useComments()
   const commentCount = slideCommentCounts[slide.id] ?? 0
+  const readOnly = useReadOnly()
 
   const {
     attributes,
@@ -74,8 +75,8 @@ export const SlideThumbnail = memo(function SlideThumbnail({
         <div
           ref={setNodeRef}
           style={style}
-          {...attributes}
-          {...listeners}
+          {...(readOnly ? {} : attributes)}
+          {...(readOnly ? {} : listeners)}
           onClick={onSelect}
           className={cn(
             'relative cursor-pointer group',
@@ -146,32 +147,34 @@ export const SlideThumbnail = memo(function SlideThumbnail({
         </div>
       </ContextMenuTrigger>
 
-      <ContextMenuContent>
-        <ContextMenuItem onClick={onDuplicate}>
-          <Copy className="h-4 w-4 mr-2" />
-          Duplicate Slide
-        </ContextMenuItem>
-        {onToggleHidden && (
-          <ContextMenuItem onClick={onToggleHidden}>
-            {slide.hidden ? (
-              <>
-                <Eye className="h-4 w-4 mr-2" />
-                Show Slide
-              </>
-            ) : (
-              <>
-                <EyeOff className="h-4 w-4 mr-2" />
-                Hide Slide
-              </>
-            )}
+      {!readOnly && (
+        <ContextMenuContent>
+          <ContextMenuItem onClick={onDuplicate}>
+            <Copy className="h-4 w-4 mr-2" />
+            Duplicate Slide
           </ContextMenuItem>
-        )}
-        <ContextMenuSeparator />
-        <ContextMenuItem onClick={onDelete} className="text-destructive">
-          <Trash2 className="h-4 w-4 mr-2" />
-          Delete Slide
-        </ContextMenuItem>
-      </ContextMenuContent>
+          {onToggleHidden && (
+            <ContextMenuItem onClick={onToggleHidden}>
+              {slide.hidden ? (
+                <>
+                  <Eye className="h-4 w-4 mr-2" />
+                  Show Slide
+                </>
+              ) : (
+                <>
+                  <EyeOff className="h-4 w-4 mr-2" />
+                  Hide Slide
+                </>
+              )}
+            </ContextMenuItem>
+          )}
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={onDelete} className="text-destructive">
+            <Trash2 className="h-4 w-4 mr-2" />
+            Delete Slide
+          </ContextMenuItem>
+        </ContextMenuContent>
+      )}
     </ContextMenu>
   )
 })
